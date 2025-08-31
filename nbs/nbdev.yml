@@ -1,0 +1,9 @@
+project:
+  output-dir: _docs
+
+website:
+  title: "cjm-transcription-plugin-system"
+  site-url: "https://cj-mills.github.io/cjm-transcription-plugin-system"
+  description: "A flexible plugin system for audio transcription intended to make it easy to add support for multiple backends."
+  repo-branch: main
+  repo-url: "https://github.com/cj-mills/cjm-transcription-plugin-system"
