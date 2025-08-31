@@ -8,6 +8,7 @@ __all__ = ['PluginManager', 'get_plugin_config_schema', 'get_plugin_config', 'up
 
 # %% ../nbs/plugin_manager.ipynb 3
 import importlib.metadata
+import importlib.util
 import inspect
 import logging
 from pathlib import Path
@@ -45,43 +46,57 @@ class PluginManager:
         discovered = []
         
         try:
-            # Python 3.10+ and backported to 3.8+
+            # For Python 3.10+
             entry_points = importlib.metadata.entry_points()
+            
+            # Get entry points for our group
             if hasattr(entry_points, 'select'):
-                # Python 3.10+
+                # Python 3.10+ method
                 plugin_eps = entry_points.select(group=self.entry_point_group)
             else:
-                # Python 3.8-3.9
+                # Fallback for older approach
                 plugin_eps = entry_points.get(self.entry_point_group, [])
-        except AttributeError:
-            # Fallback for older Python versions
-            import pkg_resources
-            plugin_eps = pkg_resources.iter_entry_points(self.entry_point_group)
+        except Exception as e:
+            self.logger.error(f"Error accessing entry points: {e}")
+            return discovered
         
         for ep in plugin_eps:
             try:
+                # Get the entry point name (plugin name)
+                plugin_name = ep.name
+                
                 # Get package metadata
-                if hasattr(ep, 'dist'):
-                    # pkg_resources style
-                    dist = ep.dist
-                    version = dist.version
-                    package_name = dist.project_name
+                # In Python 3.11+, ep.dist gives us the distribution
+                if hasattr(ep, 'dist') and ep.dist:
+                    # Get package name and version from the distribution
+                    package_name = ep.dist.name  # This is the package name
+                    version = ep.dist.version
                 else:
-                    # importlib.metadata style
-                    package_name = ep.name
+                    # Fallback: try to get distribution info from entry point value
+                    # The value is like "package.module:ClassName"
+                    package_name = plugin_name  # Use plugin name as fallback
+                    version = "unknown"
+                    
+                    # Try to get the actual package info
                     try:
-                        dist = importlib.metadata.distribution(ep.dist.name if hasattr(ep, 'dist') else ep.name)
+                        # Extract package name from the entry point value
+                        ep_value = str(ep.value) if hasattr(ep, 'value') else str(ep)
+                        package_part = ep_value.split(':')[0].split('.')[0]
+                        
+                        # Try to get distribution info
+                        dist = importlib.metadata.distribution(package_part)
+                        package_name = dist.name
                         version = dist.version
-                    except:
-                        version = "unknown"
+                    except Exception:
+                        pass
                 
                 meta = PluginMeta(
-                    name=ep.name,
+                    name=plugin_name,
                     version=version,
                     package_name=package_name
                 )
                 discovered.append(meta)
-                self.logger.info(f"Discovered plugin: {meta.name} v{meta.version}")
+                self.logger.info(f"Discovered plugin: {meta.name} v{meta.version} from package {meta.package_name}")
                 
             except Exception as e:
                 self.logger.error(f"Error discovering plugin {ep.name}: {e}")
