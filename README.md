@@ -27,8 +27,8 @@ graph LR
     plugin_manager[plugin_manager<br/>plugin manager]
 
     plugin_interface --> core
-    plugin_manager --> core
     plugin_manager --> plugin_interface
+    plugin_manager --> core
 ```
 
 *3 cross-module dependencies detected*
@@ -131,6 +131,54 @@ class PluginInterface(ABC):
         ) -> bool:  # True if all required dependencies are available
         "Check if the plugin's dependencies are available."
     
+    def get_config_schema(
+            self
+        ) -> Dict[str, Any]:  # JSON Schema describing configuration options
+        "Return JSON Schema describing the plugin's configuration options.
+
+The schema should follow JSON Schema Draft 7 specification.
+This enables automatic UI generation and validation.
+
+Example:
+    {
+        "type": "object",
+        "properties": {
+            "model": {
+                "type": "string",
+                "enum": ["tiny", "base", "small"],
+                "default": "base",
+                "description": "Model size to use"
+            }
+        },
+        "required": ["model"]
+    }"
+    
+    def get_current_config(
+            self
+        ) -> Dict[str, Any]:  # Current configuration state
+        "Return the current configuration state.
+
+This should return the actual configuration being used by the plugin,
+which may include defaults not explicitly set by the user."
+    
+    def validate_config(
+            self,
+            config: Dict[str, Any]  # Configuration to validate
+        ) -> Tuple[bool, Optional[str]]:  # (is_valid, error_message)
+        "Validate a configuration dictionary against the schema.
+
+Returns:
+    Tuple of (is_valid, error_message).
+    If valid, error_message is None."
+    
+    def get_config_defaults(
+            self
+        ) -> Dict[str, Any]:  # Default values from schema
+        "Extract default values from the configuration schema.
+
+Returns a dictionary of default values for all properties
+that have defaults defined in the schema."
+    
     def cleanup(
             self
         ) -> None
@@ -159,8 +207,102 @@ class PluginMeta:
 
 ``` python
 from cjm_transcription_plugin_system.plugin_manager import (
-    PluginManager
+    PluginManager,
+    get_plugin_config_schema,
+    get_plugin_config,
+    update_plugin_config,
+    validate_plugin_config,
+    get_all_plugin_schemas,
+    reload_plugin
 )
+```
+
+#### Functions
+
+``` python
+def get_plugin_config_schema(
+    self,
+    plugin_name: str  # Name of the plugin
+) -> Optional[Dict[str, Any]]:  # Configuration schema or None if plugin not found
+    """
+    Get the configuration schema for a plugin.
+    
+    Returns the JSON Schema that describes all configuration options
+    available for the specified plugin.
+    """
+```
+
+``` python
+def get_plugin_config(
+    self,
+    plugin_name: str  # Name of the plugin
+) -> Optional[Dict[str, Any]]:  # Current configuration or None if plugin not found
+    """
+    Get the current configuration of a plugin.
+    
+    Returns the actual configuration values being used by the plugin,
+    including any defaults.
+    """
+```
+
+``` python
+def update_plugin_config(
+    self,
+    plugin_name: str,  # Name of the plugin
+    config: Dict[str, Any],  # New configuration
+    merge: bool = True  # Whether to merge with existing config or replace entirely
+) -> bool:  # True if successful, False otherwise
+    """
+    Update a plugin's configuration and reinitialize it.
+    
+    Args:
+        plugin_name: Name of the plugin to update
+        config: New configuration dictionary
+        merge: If True, merge with existing config. If False, replace entirely.
+    
+    Returns:
+        True if configuration was successfully updated, False otherwise.
+    """
+```
+
+``` python
+def validate_plugin_config(
+    self,
+    plugin_name: str,  # Name of the plugin
+    config: Dict[str, Any]  # Configuration to validate
+) -> Tuple[bool, Optional[str]]:  # (is_valid, error_message)
+    """
+    Validate a configuration dictionary for a plugin without applying it.
+    
+    Returns:
+        Tuple of (is_valid, error_message). If valid, error_message is None.
+    """
+```
+
+``` python
+def get_all_plugin_schemas(
+    self
+) -> Dict[str, Dict[str, Any]]:  # Dictionary mapping plugin names to their schemas
+    """
+    Get configuration schemas for all loaded plugins.
+    
+    Returns a dictionary where keys are plugin names and values are
+    their configuration schemas.
+    """
+```
+
+``` python
+def reload_plugin(
+    self,
+    plugin_name: str,  # Name of the plugin to reload
+    config: Optional[Dict[str, Any]] = None  # Optional new configuration
+) -> bool:  # True if successful, False otherwise
+    """
+    Reload a plugin with optional new configuration.
+    
+    This is useful when you want to completely restart a plugin,
+    for example after updating its code during development.
+    """
 ```
 
 #### Classes
