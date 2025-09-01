@@ -4,7 +4,8 @@
 
 # %% auto 0
 __all__ = ['PluginManager', 'get_plugin_config_schema', 'get_plugin_config', 'update_plugin_config', 'validate_plugin_config',
-           'get_all_plugin_schemas', 'reload_plugin']
+           'get_all_plugin_schemas', 'reload_plugin', 'execute_plugin_stream', 'check_streaming_support',
+           'get_streaming_plugins']
 
 # %% ../nbs/plugin_manager.ipynb 3
 import importlib.metadata
@@ -451,3 +452,108 @@ PluginManager.update_plugin_config = update_plugin_config
 PluginManager.validate_plugin_config = validate_plugin_config
 PluginManager.get_all_plugin_schemas = get_all_plugin_schemas
 PluginManager.reload_plugin = reload_plugin
+
+# %% ../nbs/plugin_manager.ipynb 7
+# Add streaming support methods to PluginManager
+from typing import Generator
+
+def execute_plugin_stream(
+    self,
+    plugin_name: str,  # Name of the plugin to execute
+    audio: Any,  # Audio data or path
+    **kwargs  # Additional arguments to pass to the plugin
+) -> Generator[str, None, Any]:  # Generator yielding text chunks, returns final result
+    """
+    Execute a plugin with streaming support if available.
+    
+    This method will use the plugin's execute_stream method if the plugin
+    supports streaming, otherwise it falls back to the regular execute method.
+    
+    Args:
+        plugin_name: Name of the plugin to execute
+        audio: Audio data or path to audio file
+        **kwargs: Additional plugin-specific parameters
+        
+    Yields:
+        str: Partial transcription text chunks as they become available
+        
+    Returns:
+        Final transcription result from the plugin
+        
+    Example:
+        >>> # Stream transcription in real-time
+        >>> for chunk in manager.execute_plugin_stream("gemini", audio_file):
+        ...     print(chunk, end="", flush=True)
+    """
+    plugin = self.get_plugin(plugin_name)
+    if not plugin:
+        raise ValueError(f"Plugin {plugin_name} not found or not loaded")
+    
+    if not self.plugins[plugin_name].enabled:
+        raise ValueError(f"Plugin {plugin_name} is disabled")
+    
+    # Check if plugin supports streaming
+    if hasattr(plugin, 'supports_streaming') and plugin.supports_streaming():
+        self.logger.info(f"Using streaming mode for plugin {plugin_name}")
+        return plugin.execute_stream(audio, **kwargs)
+    else:
+        self.logger.info(f"Plugin {plugin_name} doesn't support streaming, using regular execution")
+        # Fall back to regular execution wrapped in a generator
+        def fallback_generator():
+            result = plugin.execute(audio, **kwargs)
+            # Yield the complete result text if it has one
+            if hasattr(result, 'text'):
+                yield result.text
+            else:
+                yield str(result)
+            return result
+        return fallback_generator()
+
+def check_streaming_support(
+    self,
+    plugin_name: str  # Name of the plugin to check
+) -> bool:  # True if plugin supports streaming
+    """
+    Check if a plugin supports streaming transcription.
+    
+    Returns:
+        True if the plugin implements execute_stream and supports streaming,
+        False otherwise.
+    """
+    plugin = self.get_plugin(plugin_name)
+    if not plugin:
+        return False
+    
+    # Check if plugin has the supports_streaming method and it returns True
+    if hasattr(plugin, 'supports_streaming'):
+        return plugin.supports_streaming()
+    
+    # Fallback: check if execute_stream is implemented
+    if hasattr(plugin, 'execute_stream'):
+        # Check if it's overridden from base class
+        plugin_class = type(plugin)
+        if hasattr(plugin_class, 'execute_stream'):
+            # Try to check if it's different from PluginInterface's default
+            return True
+    
+    return False
+
+def get_streaming_plugins(
+    self
+) -> List[str]:  # List of plugin names that support streaming
+    """
+    Get a list of all loaded plugins that support streaming.
+    
+    Returns:
+        List of plugin names that have streaming capabilities.
+    """
+    streaming_plugins = []
+    for plugin_name in self.plugins:
+        if self.check_streaming_support(plugin_name):
+            streaming_plugins.append(plugin_name)
+    return streaming_plugins
+
+# Add the methods to the PluginManager class
+PluginManager.execute_plugin_stream = execute_plugin_stream
+PluginManager.check_streaming_support = check_streaming_support
+PluginManager.get_streaming_plugins = get_streaming_plugins

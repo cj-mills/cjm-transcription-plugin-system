@@ -88,8 +88,64 @@ class TranscriptionResult:
 ``` python
 from cjm_transcription_plugin_system.plugin_interface import (
     PluginInterface,
+    PluginInterface_supports_streaming,
+    PluginInterface_execute_stream,
     PluginMeta
 )
+```
+
+#### Functions
+
+``` python
+def PluginInterface_supports_streaming(self) -> bool:
+    """Check if this plugin supports streaming transcription.
+    
+    Returns:
+        bool: True if execute_stream is implemented and streaming is supported
+    """
+    # Default: check if execute_stream is overridden from the base class
+    """
+    Check if this plugin supports streaming transcription.
+    
+    Returns:
+        bool: True if execute_stream is implemented and streaming is supported
+    """
+```
+
+``` python
+def PluginInterface_execute_stream(
+    self,
+    audio: Union[AudioData, str, Path],  # Audio data or path to audio file
+    **kwargs  # Additional plugin-specific parameters
+) -> Generator[str, None, TranscriptionResult]:  # Yields text chunks, returns final result
+    """
+    Stream transcription results chunk by chunk.
+    
+    Default implementation falls back to execute() without streaming.
+    Plugins can override this to provide real streaming capabilities.
+    
+    Args:
+        audio: Audio data or path to audio file
+        **kwargs: Additional plugin-specific parameters
+        
+    Yields:
+        str: Partial transcription text chunks as they become available
+        
+    Returns:
+        TranscriptionResult: Final complete transcription with metadata
+        
+    Example:
+        >>> # Stream transcription chunks in real-time
+        >>> for chunk in plugin.execute_stream(audio_file):
+        ...     print(chunk, end="", flush=True)
+        >>> 
+        >>> # Or collect all chunks and get final result
+        >>> generator = plugin.execute_stream(audio_file)
+        >>> chunks = []
+        >>> for chunk in generator:
+        ...     chunks.append(chunk)
+        >>> result = generator.value  # Final TranscriptionResult
+    """
 ```
 
 #### Classes
@@ -213,7 +269,10 @@ from cjm_transcription_plugin_system.plugin_manager import (
     update_plugin_config,
     validate_plugin_config,
     get_all_plugin_schemas,
-    reload_plugin
+    reload_plugin,
+    execute_plugin_stream,
+    check_streaming_support,
+    get_streaming_plugins
 )
 ```
 
@@ -302,6 +361,63 @@ def reload_plugin(
     
     This is useful when you want to completely restart a plugin,
     for example after updating its code during development.
+    """
+```
+
+``` python
+def execute_plugin_stream(
+    self,
+    plugin_name: str,  # Name of the plugin to execute
+    audio: Any,  # Audio data or path
+    **kwargs  # Additional arguments to pass to the plugin
+) -> Generator[str, None, Any]:  # Generator yielding text chunks, returns final result
+    """
+    Execute a plugin with streaming support if available.
+    
+    This method will use the plugin's execute_stream method if the plugin
+    supports streaming, otherwise it falls back to the regular execute method.
+    
+    Args:
+        plugin_name: Name of the plugin to execute
+        audio: Audio data or path to audio file
+        **kwargs: Additional plugin-specific parameters
+        
+    Yields:
+        str: Partial transcription text chunks as they become available
+        
+    Returns:
+        Final transcription result from the plugin
+        
+    Example:
+        >>> # Stream transcription in real-time
+        >>> for chunk in manager.execute_plugin_stream("gemini", audio_file):
+        ...     print(chunk, end="", flush=True)
+    """
+```
+
+``` python
+def check_streaming_support(
+    self,
+    plugin_name: str  # Name of the plugin to check
+) -> bool:  # True if plugin supports streaming
+    """
+    Check if a plugin supports streaming transcription.
+    
+    Returns:
+        True if the plugin implements execute_stream and supports streaming,
+        False otherwise.
+    """
+```
+
+``` python
+def get_streaming_plugins(
+    self
+) -> List[str]:  # List of plugin names that support streaming
+    """
+    Get a list of all loaded plugins that support streaming.
+    
+    Returns:
+        List of plugin names that have streaming capabilities.
     """
 ```
 
