@@ -188,7 +188,6 @@ class PluginInterface(ABC):
         "Check if the plugin's dependencies are available."
     
     def get_config_schema(
-            self
         ) -> Dict[str, Any]:  # JSON Schema describing configuration options
         "Return JSON Schema describing the plugin's configuration options.
 
