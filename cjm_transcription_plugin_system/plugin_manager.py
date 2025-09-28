@@ -31,9 +31,28 @@ class PluginManager:
         """
         self.plugin_interface = plugin_interface
         self.entry_point_group = entry_point_group
+        self.entry_points = []
+        self.discovered = []
         self.plugins: Dict[str, PluginMeta] = {}
         self._loaded_modules: Dict[str, Any] = {}
         self.logger = logging.getLogger(f"{__name__}.{type(self).__name__}")
+        # Get plugin entry points
+        self.get_entry_points()
+
+    def get_entry_points(
+        self
+    )->importlib.metadata.EntryPoints:
+        """Get plugin entry points"""
+        self.entry_points = []        
+        try:
+            # For Python 3.10+
+            entry_points = importlib.metadata.entry_points()
+            
+            # Get entry points for our group
+            self.entry_points = entry_points.select(group=self.entry_point_group)
+        except Exception as e:
+            self.logger.error(f"Error accessing entry points: {e}")
+            return self.entry_points
     
     def discover_plugins(
         self
@@ -44,24 +63,9 @@ class PluginManager:
         This method looks for plugins installed as packages that declare
         entry points in the specified group.
         """
-        discovered = []
-        
-        try:
-            # For Python 3.10+
-            entry_points = importlib.metadata.entry_points()
-            
-            # Get entry points for our group
-            if hasattr(entry_points, 'select'):
-                # Python 3.10+ method
-                plugin_eps = entry_points.select(group=self.entry_point_group)
-            else:
-                # Fallback for older approach
-                plugin_eps = entry_points.get(self.entry_point_group, [])
-        except Exception as e:
-            self.logger.error(f"Error accessing entry points: {e}")
-            return discovered
-        
-        for ep in plugin_eps:
+        self.discovered = []
+                
+        for ep in self.entry_points:
             try:
                 # Get the entry point name (plugin name)
                 plugin_name = ep.name
@@ -96,13 +100,13 @@ class PluginManager:
                     version=version,
                     package_name=package_name
                 )
-                discovered.append(meta)
+                self.discovered.append(meta)
                 self.logger.info(f"Discovered plugin: {meta.name} v{meta.version} from package {meta.package_name}")
                 
             except Exception as e:
                 self.logger.error(f"Error discovering plugin {ep.name}: {e}")
         
-        return discovered
+        return self.discovered
     
     def load_plugin(
         self,
@@ -114,16 +118,7 @@ class PluginManager:
         """
         try:
             # Find the entry point and load it
-            entry_points = importlib.metadata.entry_points()
-            if hasattr(entry_points, 'select'):
-                plugin_eps = entry_points.select(group=self.entry_point_group, name=plugin_meta.name)
-            else:
-                plugin_eps = [ep for ep in entry_points.get(self.entry_point_group, []) 
-                             if ep.name == plugin_meta.name]
-            
-            if not plugin_eps:
-                self.logger.error(f"Plugin {plugin_meta.name} not found in entry points")
-                return False
+            plugin_eps = self.entry_points.select(name=plugin_meta.name)
             
             ep = list(plugin_eps)[0]
             plugin_class = ep.load()
@@ -302,10 +297,14 @@ def get_plugin_config_schema(
     Returns the JSON Schema that describes all configuration options
     available for the specified plugin.
     """
-    plugin = self.get_plugin(plugin_name)
-    if plugin:
-        return plugin.get_config_schema()
-    return None
+    # Find the entry point
+    plugin_eps = self.entry_points.select(name=plugin_name)
+    if len(plugin_eps) > 0:
+        ep = list(plugin_eps)[0]
+        plugin_class = ep.load()  
+        return plugin_class.get_config_schema()
+    else:
+        return None
 
 def get_plugin_config(
     self,

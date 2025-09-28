@@ -436,6 +436,11 @@ class PluginManager:
                     )
         "Initialize the plugin manager."
     
+    def get_entry_points(
+            self
+        )->importlib.metadata.EntryPoints
+        "Get plugin entry points"
+    
     def discover_plugins(
             self
         ) -> List[PluginMeta]:  # List of discovered plugin metadata objects
