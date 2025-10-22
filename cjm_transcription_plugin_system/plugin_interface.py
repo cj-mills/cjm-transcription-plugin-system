@@ -28,6 +28,8 @@ class TranscriptionPlugin(PluginInterface):
     
     All transcription plugins must implement this interface.
     """
+
+    entry_point_group = "transcription.plugins"
     
     @property
     @abstractmethod
