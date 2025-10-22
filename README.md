@@ -6,7 +6,7 @@
 ## Install
 
 ``` bash
-$ pip install cjm_transcription_plugin_system
+pip install cjm_transcription_plugin_system
 ```
 
 ## Project Structure
