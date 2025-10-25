@@ -35,27 +35,15 @@ class TranscriptionPlugin(PluginInterface):
     @abstractmethod
     def supported_formats(
         self
-    ) -> List[str]:  # List of file extensions this plugin can process
-        """List of supported audio formats (e.g., ['wav', 'mp3']).
-        
-        Returns:
-            List of file extensions without the dot (e.g., ['wav', 'mp3', 'flac'])
-        """
+    ) -> List[str]:  # List of file extensions without the dot (e.g., ['wav', 'mp3', 'flac'])
+        """List of supported audio formats."""
         pass
     
     @abstractmethod
     def execute(
         self,
-        audio: Union[AudioData, str, Path],  # Audio data or path to audio file
-        **kwargs  # Additional plugin-specific parameters
-    ) -> TranscriptionResult:  # Transcription result with text and metadata
-        """Transcribe audio to text.
-        
-        Args:
-            audio: Audio data (AudioData object), file path (str), or Path object
-            **kwargs: Additional plugin-specific parameters (e.g., language, model)
-            
-        Returns:
-            TranscriptionResult containing transcribed text, confidence, segments, and metadata
-        """
+        audio: Union[AudioData, str, Path],  # Audio data (AudioData object), file path (str), or Path object
+        **kwargs  # Additional plugin-specific parameters (e.g., language, model)
+    ) -> TranscriptionResult:  # Transcription result with text, confidence, segments, and metadata
+        """Transcribe audio to text."""
         pass
