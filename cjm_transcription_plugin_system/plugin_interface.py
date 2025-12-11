@@ -7,14 +7,18 @@ __all__ = ['TranscriptionPlugin']
 
 # %% ../nbs/plugin_interface.ipynb 3
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 import logging
-from typing import Optional, Dict, Any, Union, List, Tuple, Generator
+from typing import Optional, Dict, Any, Union, List, Tuple, Generator, Type
 from pathlib import Path
-import json
 
 # Import generic plugin infrastructure from cjm-plugin-system
 from cjm_plugin_system.core.interface import PluginInterface
 from cjm_plugin_system.core.metadata import PluginMeta
+from cjm_plugin_system.utils.validation import (
+    dict_to_config, config_to_dict, validate_config,
+    SCHEMA_TITLE, SCHEMA_DESC, SCHEMA_MIN, SCHEMA_MAX, SCHEMA_ENUM
+)
 
 # Import domain-specific types
 from .core import AudioData, TranscriptionResult
