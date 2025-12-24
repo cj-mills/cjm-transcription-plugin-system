@@ -12,8 +12,8 @@ pip install cjm_transcription_plugin_system
 ## Project Structure
 
     nbs/
-    ├── core.ipynb             # Core data structures for audio transcription
-    └── plugin_interface.ipynb # Domain-specific plugin interface for audio transcription plugins
+    ├── core.ipynb             # DTOs for audio transcription with FileBackedDTO support for zero-copy transfer
+    └── plugin_interface.ipynb # Domain-specific plugin interface for audio transcription
 
 Total: 2 notebooks
 
@@ -21,7 +21,7 @@ Total: 2 notebooks
 
 ``` mermaid
 graph LR
-    core[core<br/>core]
+    core[core<br/>Core Data Structures]
     plugin_interface[plugin_interface<br/>Transcription Plugin Interface]
 
     plugin_interface --> core
@@ -37,9 +37,10 @@ No CLI commands found in this project.
 
 Detailed documentation for each module in the project:
 
-### core (`core.ipynb`)
+### Core Data Structures (`core.ipynb`)
 
-> Core data structures for audio transcription
+> DTOs for audio transcription with FileBackedDTO support for zero-copy
+> transfer
 
 #### Import
 
@@ -55,29 +56,51 @@ from cjm_transcription_plugin_system.core import (
 ``` python
 @dataclass
 class AudioData:
-    "Container for audio data and metadata."
+    """
+    Container for raw audio data.
+    Implements FileBackedDTO for zero-copy transfer between Host and Worker processes.
+    """
     
-    samples: np.ndarray  # Audio sample data as a numpy array
+    samples: np.ndarray  # Audio sample data as numpy array
     sample_rate: int  # Sample rate in Hz (e.g., 16000, 44100)
-    duration: float  # Duration of the audio in seconds
-    filepath: Optional[Path]  # Audio file path
-    metadata: Dict[str, Any] = field(...)  # Additional metadata
+    
+    def to_temp_file(self) -> str: # Absolute path to temporary WAV file
+            """Save audio to a temp file for zero-copy transfer to Worker process."""
+            # Create temp file (delete=False so Worker can read it)
+            tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            
+            # Ensure float32 format
+            audio = self.samples
+            if audio.dtype != np.float32
+        "Save audio to a temp file for zero-copy transfer to Worker process."
+    
+    def to_dict(self) -> Dict[str, Any]: # Serialized representation
+            """Convert to dictionary for smaller payloads."""
+            return {
+                "samples": self.samples.tolist(),
+        "Convert to dictionary for smaller payloads."
+    
+    def from_file(
+            cls,
+            filepath: str # Path to audio file
+        ) -> "AudioData": # AudioData instance
+        "Load audio from a file."
 ```
 
 ``` python
 @dataclass
 class TranscriptionResult:
-    "Standardized transcription output."
+    "Standardized output for all transcription plugins."
     
     text: str  # The transcribed text
-    confidence: Optional[float]  # Overall confidence score (0.0 to 1.0)
-    segments: Optional[List[Dict]] = field(...)  # List of transcription segments with timestamps and text
-    metadata: Optional[Dict] = field(...)  # Transcription metadata
+    confidence: Optional[float]  # Overall confidence (0.0 to 1.0)
+    segments: Optional[List[Dict[str, Any]]]  # Timestamped segments
+    metadata: Dict[str, Any] = field(...)  # Additional metadata
 ```
 
 ### Transcription Plugin Interface (`plugin_interface.ipynb`)
 
-> Domain-specific plugin interface for audio transcription plugins
+> Domain-specific plugin interface for audio transcription
 
 #### Import
 
@@ -92,23 +115,35 @@ from cjm_transcription_plugin_system.plugin_interface import (
 ``` python
 class TranscriptionPlugin(PluginInterface):
     """
-    Transcription-specific plugin interface.
+    Abstract base class for all transcription plugins.
     
-    This extends the generic PluginInterface with transcription-specific
-    requirements like supported audio formats and the execute signature.
+    Extends PluginInterface with transcription-specific requirements:
+    - `supported_formats`: List of audio file extensions this plugin can handle
+    - `execute`: Accepts audio path (str) or AudioData, returns TranscriptionResult
     
-    All transcription plugins must implement this interface.
+    NOTE: When running via RemotePluginProxy, AudioData objects are automatically
+    serialized to temp files via FileBackedDTO, so the Worker receives a file path.
     """
     
-    def supported_formats(
-            self
-        ) -> List[str]:  # List of file extensions without the dot (e.g., ['wav', 'mp3', 'flac'])
-        "List of supported audio formats."
+    def supported_formats(self) -> List[str]: # e.g., ['wav', 'mp3', 'flac']
+            """List of supported audio file extensions (without the dot)."""
+            ...
+    
+        @abstractmethod
+        def execute(
+            self,
+            audio: Union[AudioData, str, Path], # Audio data or file path
+            **kwargs
+        ) -> TranscriptionResult: # Transcription result with text, confidence, segments
+        "List of supported audio file extensions (without the dot)."
     
     def execute(
             self,
-            audio: Union[AudioData, str, Path],  # Audio data (AudioData object), file path (str), or Path object
-            **kwargs  # Additional plugin-specific parameters (e.g., language, model)
-        ) -> TranscriptionResult:  # Transcription result with text, confidence, segments, and metadata
-        "Transcribe audio to text."
+            audio: Union[AudioData, str, Path], # Audio data or file path
+            **kwargs
+        ) -> TranscriptionResult: # Transcription result with text, confidence, segments
+        "Transcribe audio to text.
+
+When called via Proxy, AudioData is auto-converted to a file path string
+before reaching this method in the Worker process."
 ```
