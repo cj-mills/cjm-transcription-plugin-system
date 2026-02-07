@@ -13,9 +13,10 @@ pip install cjm_transcription_plugin_system
 
     nbs/
     ├── core.ipynb             # DTOs for audio transcription with FileBackedDTO support for zero-copy transfer
-    └── plugin_interface.ipynb # Domain-specific plugin interface for audio transcription
+    ├── plugin_interface.ipynb # Domain-specific plugin interface for audio transcription
+    └── storage.ipynb          # Standardized SQLite storage for transcription results with content hashing
 
-Total: 2 notebooks
+Total: 3 notebooks
 
 ## Module Dependencies
 
@@ -23,6 +24,7 @@ Total: 2 notebooks
 graph LR
     core[core<br/>Core Data Structures]
     plugin_interface[plugin_interface<br/>Transcription Plugin Interface]
+    storage[storage<br/>Transcription Storage]
 
     plugin_interface --> core
 ```
@@ -146,4 +148,86 @@ class TranscriptionPlugin(PluginInterface):
 
 When called via Proxy, AudioData is auto-converted to a file path string
 before reaching this method in the Worker process."
+```
+
+### Transcription Storage (`storage.ipynb`)
+
+> Standardized SQLite storage for transcription results with content
+> hashing
+
+#### Import
+
+``` python
+from cjm_transcription_plugin_system.storage import (
+    TranscriptionRow,
+    TranscriptionStorage
+)
+```
+
+#### Classes
+
+``` python
+@dataclass
+class TranscriptionRow:
+    "A single row from the transcriptions table."
+    
+    job_id: str  # Unique job identifier
+    audio_path: str  # Path to the source audio file
+    audio_hash: str  # Hash of source audio in "algo:hexdigest" format
+    text: str  # Transcribed text output
+    text_hash: str  # Hash of transcribed text in "algo:hexdigest" format
+    segments: Optional[List[Dict[str, Any]]]  # Timestamped segments
+    metadata: Optional[Dict[str, Any]]  # Plugin metadata
+    created_at: Optional[float]  # Unix timestamp
+```
+
+``` python
+class TranscriptionStorage:
+    def __init__(
+        self,
+        db_path: str  # Absolute path to the SQLite database file
+    )
+    "Standardized SQLite storage for transcription results."
+    
+    def __init__(
+            self,
+            db_path: str  # Absolute path to the SQLite database file
+        )
+        "Initialize storage and create table if needed."
+    
+    def save(
+            self,
+            job_id: str,        # Unique job identifier
+            audio_path: str,    # Path to the source audio file
+            audio_hash: str,    # Hash of source audio in "algo:hexdigest" format
+            text: str,          # Transcribed text output
+            text_hash: str,     # Hash of transcribed text in "algo:hexdigest" format
+            segments: Optional[List[Dict[str, Any]]] = None,  # Timestamped segments
+            metadata: Optional[Dict[str, Any]] = None         # Plugin metadata
+        ) -> None
+        "Save a transcription result to the database."
+    
+    def get_by_job_id(
+            self,
+            job_id: str  # Job identifier to look up
+        ) -> Optional[TranscriptionRow]:  # Row or None if not found
+        "Retrieve a transcription result by job ID."
+    
+    def list_jobs(
+            self,
+            limit: int = 100  # Maximum number of rows to return
+        ) -> List[TranscriptionRow]:  # List of transcription rows
+        "List transcription jobs ordered by creation time (newest first)."
+    
+    def verify_audio(
+            self,
+            job_id: str  # Job identifier to verify
+        ) -> Optional[bool]:  # True if audio matches, False if tampered, None if job not found
+        "Verify the source audio file still matches its stored hash."
+    
+    def verify_text(
+            self,
+            job_id: str  # Job identifier to verify
+        ) -> Optional[bool]:  # True if text matches, False if tampered, None if job not found
+        "Verify the transcription text still matches its stored hash."
 ```
