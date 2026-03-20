@@ -12,24 +12,32 @@ pip install cjm_transcription_plugin_system
 ## Project Structure
 
     nbs/
-    ├── core.ipynb             # DTOs for audio transcription with FileBackedDTO support for zero-copy transfer
-    ├── plugin_interface.ipynb # Domain-specific plugin interface for audio transcription
-    └── storage.ipynb          # Standardized SQLite storage for transcription results with content hashing
+    ├── core.ipynb                       # DTOs for audio transcription with FileBackedDTO support for zero-copy transfer
+    ├── forced_alignment_core.ipynb      # Data structures for word-level forced alignment results
+    ├── forced_alignment_interface.ipynb # Domain-specific plugin interface for word-level audio-text alignment
+    ├── forced_alignment_storage.ipynb   # Standardized SQLite storage for forced alignment results with content hashing
+    ├── plugin_interface.ipynb           # Domain-specific plugin interface for audio transcription
+    └── storage.ipynb                    # Standardized SQLite storage for transcription results with content hashing
 
-Total: 3 notebooks
+Total: 6 notebooks
 
 ## Module Dependencies
 
 ``` mermaid
 graph LR
     core[core<br/>Core Data Structures]
+    forced_alignment_core[forced_alignment_core<br/>Forced Alignment Core]
+    forced_alignment_interface[forced_alignment_interface<br/>Forced Alignment Plugin Interface]
+    forced_alignment_storage[forced_alignment_storage<br/>Forced Alignment Storage]
     plugin_interface[plugin_interface<br/>Transcription Plugin Interface]
     storage[storage<br/>Transcription Storage]
 
+    forced_alignment_interface --> forced_alignment_core
+    forced_alignment_interface --> core
     plugin_interface --> core
 ```
 
-*1 cross-module dependencies detected*
+*3 cross-module dependencies detected*
 
 ## CLI Reference
 
@@ -98,6 +106,174 @@ class TranscriptionResult:
     confidence: Optional[float]  # Overall confidence (0.0 to 1.0)
     segments: Optional[List[Dict[str, Any]]]  # Timestamped segments
     metadata: Dict[str, Any] = field(...)  # Additional metadata
+```
+
+### Forced Alignment Core (`forced_alignment_core.ipynb`)
+
+> Data structures for word-level forced alignment results
+
+#### Import
+
+``` python
+from cjm_transcription_plugin_system.forced_alignment_core import (
+    ForcedAlignItem,
+    ForcedAlignResult
+)
+```
+
+#### Classes
+
+``` python
+@dataclass
+class ForcedAlignItem:
+    "A single word-level alignment result."
+    
+    text: str  # The aligned word (punctuation typically stripped by model)
+    start_time: float  # Start time in seconds
+    end_time: float  # End time in seconds
+```
+
+``` python
+@dataclass
+class ForcedAlignResult:
+    "Standardized output for all forced alignment plugins."
+    
+    items: List[ForcedAlignItem]  # Word-level alignments
+    metadata: Dict[str, Any] = field(...)  # Plugin-specific metadata
+```
+
+### Forced Alignment Plugin Interface (`forced_alignment_interface.ipynb`)
+
+> Domain-specific plugin interface for word-level audio-text alignment
+
+#### Import
+
+``` python
+from cjm_transcription_plugin_system.forced_alignment_interface import (
+    ForcedAlignmentPlugin
+)
+```
+
+#### Classes
+
+``` python
+class ForcedAlignmentPlugin(PluginInterface):
+    """
+    Abstract base class for all forced alignment plugins.
+    
+    Extends PluginInterface with forced-alignment-specific requirements:
+    - `supported_formats`: List of audio file extensions this plugin can handle
+    - `execute`: Accepts audio path and transcript text, returns ForcedAlignResult
+    
+    NOTE: When running via RemotePluginProxy, AudioData objects are automatically
+    serialized to temp files via FileBackedDTO, so the Worker receives a file path.
+    """
+    
+    def supported_formats(self) -> List[str]:  # e.g., ['wav', 'mp3', 'flac']
+            """List of supported audio file extensions (without the dot)."""
+            ...
+    
+        @abstractmethod
+        def execute(
+            self,
+            audio: Union[AudioData, str, Path],  # Audio data or file path
+            text: str,                            # Transcript text to align against
+            **kwargs
+        ) -> ForcedAlignResult:  # Word-level alignment result
+        "List of supported audio file extensions (without the dot)."
+    
+    def execute(
+            self,
+            audio: Union[AudioData, str, Path],  # Audio data or file path
+            text: str,                            # Transcript text to align against
+            **kwargs
+        ) -> ForcedAlignResult:  # Word-level alignment result
+        "Perform forced alignment of text against audio.
+
+When called via Proxy, AudioData is auto-converted to a file path string
+before reaching this method in the Worker process."
+```
+
+### Forced Alignment Storage (`forced_alignment_storage.ipynb`)
+
+> Standardized SQLite storage for forced alignment results with content
+> hashing
+
+#### Import
+
+``` python
+from cjm_transcription_plugin_system.forced_alignment_storage import (
+    ForcedAlignmentRow,
+    ForcedAlignmentStorage
+)
+```
+
+#### Classes
+
+``` python
+@dataclass
+class ForcedAlignmentRow:
+    "A single row from the forced_alignments table."
+    
+    job_id: str  # Unique job identifier
+    audio_path: str  # Path to the source audio file
+    audio_hash: str  # Hash of source audio in "algo:hexdigest" format
+    text: str  # Input transcript text that was aligned
+    text_hash: str  # Hash of input text in "algo:hexdigest" format
+    items: Optional[List[Dict[str, Any]]]  # Serialized ForcedAlignItems
+    metadata: Optional[Dict[str, Any]]  # Plugin metadata
+    created_at: Optional[float]  # Unix timestamp
+```
+
+``` python
+class ForcedAlignmentStorage:
+    def __init__(
+        self,
+        db_path: str  # Absolute path to the SQLite database file
+    )
+    "Standardized SQLite storage for forced alignment results."
+    
+    def __init__(
+            self,
+            db_path: str  # Absolute path to the SQLite database file
+        )
+        "Initialize storage and create table if needed."
+    
+    def save(
+            self,
+            job_id: str,        # Unique job identifier
+            audio_path: str,    # Path to the source audio file
+            audio_hash: str,    # Hash of source audio in "algo:hexdigest" format
+            text: str,          # Input transcript text
+            text_hash: str,     # Hash of input text in "algo:hexdigest" format
+            items: Optional[List[Dict[str, Any]]] = None,  # Serialized ForcedAlignItems
+            metadata: Optional[Dict[str, Any]] = None       # Plugin metadata
+        ) -> None
+        "Save a forced alignment result to the database."
+    
+    def get_by_job_id(
+            self,
+            job_id: str  # Job identifier to look up
+        ) -> Optional[ForcedAlignmentRow]:  # Row or None if not found
+        "Retrieve a forced alignment result by job ID."
+    
+    def list_jobs(
+            self,
+            limit: int = 100  # Maximum number of rows to return
+        ) -> List[ForcedAlignmentRow]:  # List of forced alignment rows
+        "List forced alignment jobs ordered by creation time (newest first)."
+    
+    def verify_audio(
+            self,
+            job_id: str  # Job identifier to verify
+        ) -> Optional[bool]:  # True if audio matches, False if tampered, None if job not found
+        "Verify the source audio file still matches its stored hash."
+    
+    def verify_text(
+            self,
+            job_id: str  # Job identifier to verify
+        ) -> Optional[bool]:  # True if text matches, False if tampered, None if job not found
+        "Verify the input text still matches its stored hash."
 ```
 
 ### Transcription Plugin Interface (`plugin_interface.ipynb`)
