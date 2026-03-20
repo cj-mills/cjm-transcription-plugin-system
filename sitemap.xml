@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://cj-mills.github.io/cjm-transcription-plugin-system/plugin_interface.html</loc>
+    <lastmod>2026-03-20T01:49:42.579Z</lastmod>
+  </url>
+  <url>
+    <loc>https://cj-mills.github.io/cjm-transcription-plugin-system/forced_alignment_interface.html</loc>
+    <lastmod>2026-03-20T01:49:42.476Z</lastmod>
+  </url>
+  <url>
+    <loc>https://cj-mills.github.io/cjm-transcription-plugin-system/forced_alignment_storage.html</loc>
+    <lastmod>2026-03-20T01:49:42.400Z</lastmod>
+  </url>
+  <url>
+    <loc>https://cj-mills.github.io/cjm-transcription-plugin-system/index.html</loc>
+    <lastmod>2026-03-20T01:49:42.438Z</lastmod>
+  </url>
+  <url>
+    <loc>https://cj-mills.github.io/cjm-transcription-plugin-system/core.html</loc>
+    <lastmod>2026-03-20T01:49:42.496Z</lastmod>
+  </url>
+  <url>
+    <loc>https://cj-mills.github.io/cjm-transcription-plugin-system/forced_alignment_core.html</loc>
+    <lastmod>2026-03-20T01:49:42.413Z</lastmod>
+  </url>
+  <url>
+    <loc>https://cj-mills.github.io/cjm-transcription-plugin-system/storage.html</loc>
+    <lastmod>2026-03-20T01:49:42.514Z</lastmod>
+  </url>
+</urlset>

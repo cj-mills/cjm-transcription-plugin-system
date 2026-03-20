@@ -1,0 +1,262 @@
+[
+  {
+    "objectID": "plugin_interface.html",
+    "href": "plugin_interface.html",
+    "title": "Transcription Plugin Interface",
+    "section": "",
+    "text": "source",
+    "crumbs": [
+      "Transcription Plugin Interface"
+    ]
+  },
+  {
+    "objectID": "plugin_interface.html#how-it-works",
+    "href": "plugin_interface.html#how-it-works",
+    "title": "Transcription Plugin Interface",
+    "section": "How It Works",
+    "text": "How It Works\nHost Process                              Worker Process (Isolated Env)\n┌─────────────────────┐                  ┌─────────────────────────────┐\n│ audio = AudioData(  │                  │                             │\n│   samples=np.array, │                  │  TranscriptionPlugin        │\n│   sample_rate=16000 │                  │    .execute(                │\n│ )                   │                  │       audio=\"/tmp/xyz.wav\"  │\n│                     │                  │    )                        │\n│ plugin.execute(     │   HTTP/JSON      │                             │\n│   audio=audio       │ ─────────────────▶  # audio is now a PATH      │\n│ )                   │  (path string)   │  # Plugin reads from disk   │\n│                     │                  │                             │\n│ # Proxy detects     │                  │                             │\n│ # FileBackedDTO,    │                  │                             │\n│ # calls to_temp_file│                  │                             │\n└─────────────────────┘                  └─────────────────────────────┘\nThe RemotePluginProxy automatically: 1. Detects AudioData implements FileBackedDTO 2. Calls audio.to_temp_file() to save to disk 3. Sends the file path string to the Worker 4. Worker’s execute() receives a path, not the AudioData object",
+    "crumbs": [
+      "Transcription Plugin Interface"
+    ]
+  },
+  {
+    "objectID": "plugin_interface.html#example-implementation",
+    "href": "plugin_interface.html#example-implementation",
+    "title": "Transcription Plugin Interface",
+    "section": "Example Implementation",
+    "text": "Example Implementation\nA minimal transcription plugin that demonstrates the interface:\n\nfrom typing import Any, Dict, Optional\n\nclass ExampleTranscriptionPlugin(TranscriptionPlugin):\n    \"\"\"Example implementation showing how to create a transcription plugin.\"\"\"\n    \n    def __init__(self):\n        self._config: Dict[str, Any] = {}\n        self._model = None\n\n    @property\n    def name(self) -&gt; str:\n        return \"example-transcription\"\n    \n    @property\n    def version(self) -&gt; str:\n        return \"1.0.0\"\n    \n    @property\n    def supported_formats(self) -&gt; List[str]:\n        return [\"wav\", \"mp3\", \"flac\"]\n\n    def initialize(self, config: Optional[Dict[str, Any]] = None) -&gt; None:\n        \"\"\"Initialize with configuration.\"\"\"\n        self._config = config or {\"model\": \"base\"}\n        self._model = f\"MockModel-{self._config.get('model', 'base')}\"\n\n    def execute(\n        self,\n        audio: Union[AudioData, str, Path],\n        **kwargs\n    ) -&gt; TranscriptionResult:\n        \"\"\"Transcribe audio (receives file path when called via Proxy).\"\"\"\n        # In Worker process, audio is typically a string path\n        audio_path = str(audio) if not isinstance(audio, AudioData) else \"in-memory\"\n        \n        return TranscriptionResult(\n            text=f\"Transcribed from {audio_path}\",\n            confidence=0.95,\n            segments=[{\"start\": 0.0, \"end\": 1.0, \"text\": \"Mock transcription\"}],\n            metadata={\"model\": self._config.get(\"model\")}\n        )\n\n    def get_config_schema(self) -&gt; Dict[str, Any]:\n        \"\"\"Return JSON Schema for configuration.\"\"\"\n        return {\n            \"type\": \"object\",\n            \"properties\": {\n                \"model\": {\n                    \"type\": \"string\",\n                    \"enum\": [\"tiny\", \"base\", \"small\", \"medium\", \"large\"],\n                    \"default\": \"base\"\n                },\n                \"language\": {\n                    \"type\": \"string\",\n                    \"default\": \"en\"\n                }\n            }\n        }\n\n    def get_current_config(self) -&gt; Dict[str, Any]:\n        \"\"\"Return current configuration.\"\"\"\n        return self._config\n\n    def cleanup(self) -&gt; None:\n        \"\"\"Clean up resources.\"\"\"\n        self._model = None\n\n\n# Test the example plugin\nplugin = ExampleTranscriptionPlugin()\nplugin.initialize({\"model\": \"large\", \"language\": \"en\"})\n\nprint(f\"Plugin: {plugin.name} v{plugin.version}\")\nprint(f\"Supported formats: {plugin.supported_formats}\")\nprint(f\"Config schema: {plugin.get_config_schema()}\")\nprint(f\"Current config: {plugin.get_current_config()}\")\n\n# Test execution with a file path (as Worker would receive)\nresult = plugin.execute(\"/tmp/audio.wav\")\nprint(f\"\\nResult: {result}\")\n\n# Cleanup\nplugin.cleanup()\n\nPlugin: example-transcription v1.0.0\nSupported formats: ['wav', 'mp3', 'flac']\nConfig schema: {'type': 'object', 'properties': {'model': {'type': 'string', 'enum': ['tiny', 'base', 'small', 'medium', 'large'], 'default': 'base'}, 'language': {'type': 'string', 'default': 'en'}}}\nCurrent config: {'model': 'large', 'language': 'en'}\n\nResult: TranscriptionResult(text='Transcribed from /tmp/audio.wav', confidence=0.95, segments=[{'start': 0.0, 'end': 1.0, 'text': 'Mock transcription'}], metadata={'model': 'large'})",
+    "crumbs": [
+      "Transcription Plugin Interface"
+    ]
+  },
+  {
+    "objectID": "forced_alignment_interface.html",
+    "href": "forced_alignment_interface.html",
+    "title": "Forced Alignment Plugin Interface",
+    "section": "",
+    "text": "source",
+    "crumbs": [
+      "Forced Alignment Plugin Interface"
+    ]
+  },
+  {
+    "objectID": "forced_alignment_interface.html#how-it-works",
+    "href": "forced_alignment_interface.html#how-it-works",
+    "title": "Forced Alignment Plugin Interface",
+    "section": "How It Works",
+    "text": "How It Works\nHost Process                              Worker Process (Isolated Env)\n+---------------------+                  +-----------------------------+\n| audio = AudioData(  |                  |                             |\n|   samples=np.array, |                  |  ForcedAlignmentPlugin      |\n|   sample_rate=16000 |                  |    .execute(                |\n| )                   |                  |       audio=\"/tmp/xyz.wav\", |\n|                     |                  |       text=\"Hello world\"    |\n| plugin.execute(     |   HTTP/JSON      |    )                        |\n|   audio=audio,      | -----------------+                             |\n|   text=\"Hello world\"|  (path string)   |  # audio is now a PATH      |\n| )                   |                  |  # text passed as-is        |\n|                     |                  |  # Plugin aligns words      |\n| # Proxy detects     |                  |  # Returns ForcedAlignResult|\n| # FileBackedDTO,    |                  |                             |\n| # calls to_temp_file|                  |                             |\n+---------------------+                  +-----------------------------+\nThe RemotePluginProxy automatically: 1. Detects AudioData implements FileBackedDTO 2. Calls audio.to_temp_file() to save to disk 3. Sends the file path string to the Worker 4. Worker’s execute() receives a path (not AudioData) plus the text string",
+    "crumbs": [
+      "Forced Alignment Plugin Interface"
+    ]
+  },
+  {
+    "objectID": "forced_alignment_interface.html#example-implementation",
+    "href": "forced_alignment_interface.html#example-implementation",
+    "title": "Forced Alignment Plugin Interface",
+    "section": "Example Implementation",
+    "text": "Example Implementation\nA minimal forced alignment plugin that demonstrates the interface:\n\nfrom typing import Any, Dict, Optional\nfrom cjm_transcription_plugin_system.forced_alignment_core import ForcedAlignItem\n\nclass ExampleForcedAlignmentPlugin(ForcedAlignmentPlugin):\n    \"\"\"Example implementation showing how to create a forced alignment plugin.\"\"\"\n\n    def __init__(self):\n        self._config: Dict[str, Any] = {}\n\n    @property\n    def name(self) -&gt; str:\n        return \"example-forced-alignment\"\n\n    @property\n    def version(self) -&gt; str:\n        return \"1.0.0\"\n\n    @property\n    def supported_formats(self) -&gt; List[str]:\n        return [\"wav\", \"mp3\", \"flac\"]\n\n    def initialize(self, config: Optional[Dict[str, Any]] = None) -&gt; None:\n        self._config = config or {\"language\": \"English\"}\n\n    def execute(\n        self,\n        audio: Union[AudioData, str, Path],\n        text: str,\n        **kwargs\n    ) -&gt; ForcedAlignResult:\n        \"\"\"Mock alignment that assigns equal time to each word.\"\"\"\n        words = text.split()\n        duration = 10.0  # Assume 10 seconds of audio\n        time_per_word = duration / max(len(words), 1)\n\n        items = []\n        for i, word in enumerate(words):\n            items.append(ForcedAlignItem(\n                text=word.strip('.,!?;:'),\n                start_time=round(i * time_per_word, 2),\n                end_time=round((i + 1) * time_per_word, 2),\n            ))\n\n        return ForcedAlignResult(\n            items=items,\n            metadata={\"model\": \"mock\", \"language\": self._config.get(\"language\")}\n        )\n\n    def get_config_schema(self) -&gt; Dict[str, Any]:\n        return {\n            \"type\": \"object\",\n            \"properties\": {\n                \"language\": {\"type\": \"string\", \"default\": \"English\"}\n            }\n        }\n\n    def get_current_config(self) -&gt; Dict[str, Any]:\n        return self._config\n\n    def cleanup(self) -&gt; None:\n        pass\n\n\n# Test the example plugin\nplugin = ExampleForcedAlignmentPlugin()\nplugin.initialize({\"language\": \"English\"})\n\nprint(f\"Plugin: {plugin.name} v{plugin.version}\")\nprint(f\"Supported formats: {plugin.supported_formats}\")\nprint(f\"Entry point group: {plugin.entry_point_group}\")\n\n# Test execution with text\nresult = plugin.execute(\"/tmp/audio.wav\", text=\"Hello world how are you\")\nprint(f\"\\nResult: {len(result.items)} items\")\nfor item in result.items:\n    print(f\"  {item}\")\nprint(f\"Metadata: {result.metadata}\")\n\nassert len(result.items) == 5\nassert result.items[0].text == \"Hello\"\nassert result.metadata[\"language\"] == \"English\"\n\nplugin.cleanup()\n\nPlugin: example-forced-alignment v1.0.0\nSupported formats: ['wav', 'mp3', 'flac']\nEntry point group: transcription.forced_alignment_plugins\n\nResult: 5 items\n  ForcedAlignItem(text='Hello', start_time=0.0, end_time=2.0)\n  ForcedAlignItem(text='world', start_time=2.0, end_time=4.0)\n  ForcedAlignItem(text='how', start_time=4.0, end_time=6.0)\n  ForcedAlignItem(text='are', start_time=6.0, end_time=8.0)\n  ForcedAlignItem(text='you', start_time=8.0, end_time=10.0)\nMetadata: {'model': 'mock', 'language': 'English'}",
+    "crumbs": [
+      "Forced Alignment Plugin Interface"
+    ]
+  },
+  {
+    "objectID": "forced_alignment_storage.html",
+    "href": "forced_alignment_storage.html",
+    "title": "Forced Alignment Storage",
+    "section": "",
+    "text": "A dataclass representing a single row in the standardized forced alignments table. This provides a type-safe way to work with stored forced alignment results.\n\nsource\n\n\n\ndef ForcedAlignmentRow(\n    job_id:str, audio_path:str, audio_hash:str, text:str, text_hash:str, items:Optional=None, metadata:Optional=None,\n    created_at:Optional=None\n)-&gt;None:\n\nA single row from the forced_alignments table.\n\n# Test ForcedAlignmentRow creation\nrow = ForcedAlignmentRow(\n    job_id=\"fa_job_abc123\",\n    audio_path=\"/tmp/test.mp3\",\n    audio_hash=\"sha256:\" + \"a\" * 64,\n    text=\"Hello world\",\n    text_hash=\"sha256:\" + \"b\" * 64,\n    items=[{\"text\": \"Hello\", \"start_time\": 0.0, \"end_time\": 0.5}],\n    metadata={\"model\": \"qwen3-forced-aligner\"}\n)\n\nprint(f\"Row: job_id={row.job_id}, text={row.text}\")\nprint(f\"Audio hash: {row.audio_hash[:20]}...\")\nprint(f\"Text hash: {row.text_hash[:20]}...\")\n\nRow: job_id=fa_job_abc123, text=Hello world\nAudio hash: sha256:aaaaaaaaaaaaa...\nText hash: sha256:bbbbbbbbbbbbb...",
+    "crumbs": [
+      "Forced Alignment Storage"
+    ]
+  },
+  {
+    "objectID": "forced_alignment_storage.html#forcedalignmentrow",
+    "href": "forced_alignment_storage.html#forcedalignmentrow",
+    "title": "Forced Alignment Storage",
+    "section": "",
+    "text": "A dataclass representing a single row in the standardized forced alignments table. This provides a type-safe way to work with stored forced alignment results.\n\nsource\n\n\n\ndef ForcedAlignmentRow(\n    job_id:str, audio_path:str, audio_hash:str, text:str, text_hash:str, items:Optional=None, metadata:Optional=None,\n    created_at:Optional=None\n)-&gt;None:\n\nA single row from the forced_alignments table.\n\n# Test ForcedAlignmentRow creation\nrow = ForcedAlignmentRow(\n    job_id=\"fa_job_abc123\",\n    audio_path=\"/tmp/test.mp3\",\n    audio_hash=\"sha256:\" + \"a\" * 64,\n    text=\"Hello world\",\n    text_hash=\"sha256:\" + \"b\" * 64,\n    items=[{\"text\": \"Hello\", \"start_time\": 0.0, \"end_time\": 0.5}],\n    metadata={\"model\": \"qwen3-forced-aligner\"}\n)\n\nprint(f\"Row: job_id={row.job_id}, text={row.text}\")\nprint(f\"Audio hash: {row.audio_hash[:20]}...\")\nprint(f\"Text hash: {row.text_hash[:20]}...\")\n\nRow: job_id=fa_job_abc123, text=Hello world\nAudio hash: sha256:aaaaaaaaaaaaa...\nText hash: sha256:bbbbbbbbbbbbb...",
+    "crumbs": [
+      "Forced Alignment Storage"
+    ]
+  },
+  {
+    "objectID": "forced_alignment_storage.html#forcedalignmentstorage",
+    "href": "forced_alignment_storage.html#forcedalignmentstorage",
+    "title": "Forced Alignment Storage",
+    "section": "ForcedAlignmentStorage",
+    "text": "ForcedAlignmentStorage\nStandardized SQLite storage that all forced alignment plugins should use. Defines the canonical schema for the forced_alignments table with content hash columns for traceability.\nSchema:\nCREATE TABLE IF NOT EXISTS forced_alignments (\n    id INTEGER PRIMARY KEY AUTOINCREMENT,\n    job_id TEXT UNIQUE NOT NULL,\n    audio_path TEXT NOT NULL,\n    audio_hash TEXT NOT NULL,\n    text TEXT NOT NULL,\n    text_hash TEXT NOT NULL,\n    items JSON,\n    metadata JSON,\n    created_at REAL NOT NULL\n);\nThe audio_hash and text_hash columns use the self-describing \"algo:hexdigest\" format (e.g., \"sha256:a3f2b8...\"), enabling downstream consumers to verify content integrity.\n\nsource\n\nForcedAlignmentStorage\n\ndef ForcedAlignmentStorage(\n    db_path:str, # Absolute path to the SQLite database file\n):\n\nStandardized SQLite storage for forced alignment results.",
+    "crumbs": [
+      "Forced Alignment Storage"
+    ]
+  },
+  {
+    "objectID": "forced_alignment_storage.html#testing",
+    "href": "forced_alignment_storage.html#testing",
+    "title": "Forced Alignment Storage",
+    "section": "Testing",
+    "text": "Testing\n\nimport tempfile\nimport os\n\n# Create storage with temp database\ntmp_db = tempfile.NamedTemporaryFile(suffix=\".db\", delete=False)\nstorage = ForcedAlignmentStorage(tmp_db.name)\n\nprint(f\"Storage initialized at: {tmp_db.name}\")\n\nStorage initialized at: /tmp/tmpwfon0jh4.db\n\n\n\n# Save a forced alignment result with hashes\ntest_text = \"November the 10th, Wednesday, 9 p.m.\"\ntext_hash = hash_bytes(test_text.encode())\naudio_hash = \"sha256:\" + \"e3b0c44298\" * 6 + \"e3b0\"  # Simulated audio hash\n\ntest_items = [\n    {\"text\": \"November\", \"start_time\": 1.04, \"end_time\": 1.6},\n    {\"text\": \"the\", \"start_time\": 1.6, \"end_time\": 1.68},\n    {\"text\": \"10th\", \"start_time\": 1.76, \"end_time\": 2.08},\n    {\"text\": \"Wednesday\", \"start_time\": 2.48, \"end_time\": 3.04},\n    {\"text\": \"9\", \"start_time\": 3.84, \"end_time\": 4.16},\n    {\"text\": \"pm\", \"start_time\": 4.16, \"end_time\": 4.64},\n]\n\nstorage.save(\n    job_id=\"fa_test_001\",\n    audio_path=\"/tmp/test_audio.mp3\",\n    audio_hash=audio_hash,\n    text=test_text,\n    text_hash=text_hash,\n    items=test_items,\n    metadata={\"model_id\": \"Qwen/Qwen3-ForcedAligner-0.6B\", \"language\": \"English\", \"word_count\": 6}\n)\n\nprint(f\"Saved fa_test_001\")\nprint(f\"Text hash: {text_hash}\")\n\nSaved fa_test_001\nText hash: sha256:bb6827d460a3f8dff6d8b5704e237e54141853a0c58d1d7aefa49417ec6e49ad\n\n\n\n# Retrieve by job ID\nrow = storage.get_by_job_id(\"fa_test_001\")\nassert row is not None\nassert row.job_id == \"fa_test_001\"\nassert row.text == test_text\nassert row.text_hash == text_hash\nassert row.audio_hash == audio_hash\nassert row.items is not None\nassert len(row.items) == 6\nassert row.items[0][\"text\"] == \"November\"\nassert row.items[0][\"start_time\"] == 1.04\nassert row.metadata[\"model_id\"] == \"Qwen/Qwen3-ForcedAligner-0.6B\"\nassert row.created_at is not None\n\nprint(f\"Retrieved: {row.job_id}\")\nprint(f\"Text: {row.text}\")\nprint(f\"Items: {len(row.items)} words\")\nprint(f\"First item: {row.items[0]}\")\nprint(f\"Created at: {row.created_at}\")\n\nRetrieved: fa_test_001\nText: November the 10th, Wednesday, 9 p.m.\nItems: 6 words\nFirst item: {'text': 'November', 'start_time': 1.04, 'end_time': 1.6}\nCreated at: 1773970556.1129797\n\n\n\n# Missing job returns None\nmissing = storage.get_by_job_id(\"nonexistent\")\nassert missing is None\nprint(\"get_by_job_id returns None for missing job: OK\")\n\nget_by_job_id returns None for missing job: OK\n\n\n\n# Save another and test list_jobs\nstorage.save(\n    job_id=\"fa_test_002\",\n    audio_path=\"/tmp/test_audio_2.mp3\",\n    audio_hash=\"sha256:\" + \"f\" * 64,\n    text=\"Second alignment test.\",\n    text_hash=hash_bytes(b\"Second alignment test.\"),\n    items=[{\"text\": \"Second\", \"start_time\": 0.0, \"end_time\": 0.5}],\n)\n\njobs = storage.list_jobs()\nassert len(jobs) == 2\n# Newest first\nassert jobs[0].job_id == \"fa_test_002\"\nassert jobs[1].job_id == \"fa_test_001\"\n\nprint(f\"list_jobs returned {len(jobs)} rows (newest first): {[j.job_id for j in jobs]}\")\n\nlist_jobs returned 2 rows (newest first): ['fa_test_002', 'fa_test_001']\n\n\n\n# Test text verification\nassert storage.verify_text(\"fa_test_001\") == True\nprint(\"verify_text with unchanged text: True\")\n\n# Tamper with text directly in DB\nwith sqlite3.connect(tmp_db.name) as con:\n    con.execute(\"UPDATE forced_alignments SET text = 'TAMPERED' WHERE job_id = 'fa_test_001'\")\n\nassert storage.verify_text(\"fa_test_001\") == False\nprint(\"verify_text after tampering: False\")\n\n# Missing job returns None\nassert storage.verify_text(\"nonexistent\") is None\nprint(\"verify_text for missing job: None\")\n\nverify_text with unchanged text: True\nverify_text after tampering: False\nverify_text for missing job: None\n\n\n\n# Cleanup\nos.unlink(tmp_db.name)\nprint(\"Cleanup complete\")\n\nCleanup complete",
+    "crumbs": [
+      "Forced Alignment Storage"
+    ]
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "cjm-transcription-plugin-system",
+    "section": "",
+    "text": "pip install cjm_transcription_plugin_system",
+    "crumbs": [
+      "cjm-transcription-plugin-system"
+    ]
+  },
+  {
+    "objectID": "index.html#install",
+    "href": "index.html#install",
+    "title": "cjm-transcription-plugin-system",
+    "section": "",
+    "text": "pip install cjm_transcription_plugin_system",
+    "crumbs": [
+      "cjm-transcription-plugin-system"
+    ]
+  },
+  {
+    "objectID": "index.html#project-structure",
+    "href": "index.html#project-structure",
+    "title": "cjm-transcription-plugin-system",
+    "section": "Project Structure",
+    "text": "Project Structure\nnbs/\n├── core.ipynb                       # DTOs for audio transcription with FileBackedDTO support for zero-copy transfer\n├── forced_alignment_core.ipynb      # Data structures for word-level forced alignment results\n├── forced_alignment_interface.ipynb # Domain-specific plugin interface for word-level audio-text alignment\n├── forced_alignment_storage.ipynb   # Standardized SQLite storage for forced alignment results with content hashing\n├── plugin_interface.ipynb           # Domain-specific plugin interface for audio transcription\n└── storage.ipynb                    # Standardized SQLite storage for transcription results with content hashing\nTotal: 6 notebooks",
+    "crumbs": [
+      "cjm-transcription-plugin-system"
+    ]
+  },
+  {
+    "objectID": "index.html#module-dependencies",
+    "href": "index.html#module-dependencies",
+    "title": "cjm-transcription-plugin-system",
+    "section": "Module Dependencies",
+    "text": "Module Dependencies\ngraph LR\n    core[core&lt;br/&gt;Core Data Structures]\n    forced_alignment_core[forced_alignment_core&lt;br/&gt;Forced Alignment Core]\n    forced_alignment_interface[forced_alignment_interface&lt;br/&gt;Forced Alignment Plugin Interface]\n    forced_alignment_storage[forced_alignment_storage&lt;br/&gt;Forced Alignment Storage]\n    plugin_interface[plugin_interface&lt;br/&gt;Transcription Plugin Interface]\n    storage[storage&lt;br/&gt;Transcription Storage]\n\n    forced_alignment_interface --&gt; forced_alignment_core\n    forced_alignment_interface --&gt; core\n    plugin_interface --&gt; core\n3 cross-module dependencies detected",
+    "crumbs": [
+      "cjm-transcription-plugin-system"
+    ]
+  },
+  {
+    "objectID": "index.html#cli-reference",
+    "href": "index.html#cli-reference",
+    "title": "cjm-transcription-plugin-system",
+    "section": "CLI Reference",
+    "text": "CLI Reference\nNo CLI commands found in this project.",
+    "crumbs": [
+      "cjm-transcription-plugin-system"
+    ]
+  },
+  {
+    "objectID": "index.html#module-overview",
+    "href": "index.html#module-overview",
+    "title": "cjm-transcription-plugin-system",
+    "section": "Module Overview",
+    "text": "Module Overview\nDetailed documentation for each module in the project:\n\nCore Data Structures (core.ipynb)\n\nDTOs for audio transcription with FileBackedDTO support for zero-copy transfer\n\n\nImport\nfrom cjm_transcription_plugin_system.core import (\n    AudioData,\n    TranscriptionResult\n)\n\n\nClasses\n@dataclass\nclass AudioData:\n    \"\"\"\n    Container for raw audio data.\n    Implements FileBackedDTO for zero-copy transfer between Host and Worker processes.\n    \"\"\"\n    \n    samples: np.ndarray  # Audio sample data as numpy array\n    sample_rate: int  # Sample rate in Hz (e.g., 16000, 44100)\n    \n    def to_temp_file(self) -&gt; str: # Absolute path to temporary WAV file\n            \"\"\"Save audio to a temp file for zero-copy transfer to Worker process.\"\"\"\n            # Create temp file (delete=False so Worker can read it)\n            tmp = tempfile.NamedTemporaryFile(suffix=\".wav\", delete=False)\n            \n            # Ensure float32 format\n            audio = self.samples\n            if audio.dtype != np.float32\n        \"Save audio to a temp file for zero-copy transfer to Worker process.\"\n    \n    def to_dict(self) -&gt; Dict[str, Any]: # Serialized representation\n            \"\"\"Convert to dictionary for smaller payloads.\"\"\"\n            return {\n                \"samples\": self.samples.tolist(),\n        \"Convert to dictionary for smaller payloads.\"\n    \n    def from_file(\n            cls,\n            filepath: str # Path to audio file\n        ) -&gt; \"AudioData\": # AudioData instance\n        \"Load audio from a file.\"\n@dataclass\nclass TranscriptionResult:\n    \"Standardized output for all transcription plugins.\"\n    \n    text: str  # The transcribed text\n    confidence: Optional[float]  # Overall confidence (0.0 to 1.0)\n    segments: Optional[List[Dict[str, Any]]]  # Timestamped segments\n    metadata: Dict[str, Any] = field(...)  # Additional metadata\n\n\n\nForced Alignment Core (forced_alignment_core.ipynb)\n\nData structures for word-level forced alignment results\n\n\nImport\nfrom cjm_transcription_plugin_system.forced_alignment_core import (\n    ForcedAlignItem,\n    ForcedAlignResult\n)\n\n\nClasses\n@dataclass\nclass ForcedAlignItem:\n    \"A single word-level alignment result.\"\n    \n    text: str  # The aligned word (punctuation typically stripped by model)\n    start_time: float  # Start time in seconds\n    end_time: float  # End time in seconds\n@dataclass\nclass ForcedAlignResult:\n    \"Standardized output for all forced alignment plugins.\"\n    \n    items: List[ForcedAlignItem]  # Word-level alignments\n    metadata: Dict[str, Any] = field(...)  # Plugin-specific metadata\n\n\n\nForced Alignment Plugin Interface (forced_alignment_interface.ipynb)\n\nDomain-specific plugin interface for word-level audio-text alignment\n\n\nImport\nfrom cjm_transcription_plugin_system.forced_alignment_interface import (\n    ForcedAlignmentPlugin\n)\n\n\nClasses\nclass ForcedAlignmentPlugin(PluginInterface):\n    \"\"\"\n    Abstract base class for all forced alignment plugins.\n    \n    Extends PluginInterface with forced-alignment-specific requirements:\n    - `supported_formats`: List of audio file extensions this plugin can handle\n    - `execute`: Accepts audio path and transcript text, returns ForcedAlignResult\n    \n    NOTE: When running via RemotePluginProxy, AudioData objects are automatically\n    serialized to temp files via FileBackedDTO, so the Worker receives a file path.\n    \"\"\"\n    \n    def supported_formats(self) -&gt; List[str]:  # e.g., ['wav', 'mp3', 'flac']\n            \"\"\"List of supported audio file extensions (without the dot).\"\"\"\n            ...\n    \n        @abstractmethod\n        def execute(\n            self,\n            audio: Union[AudioData, str, Path],  # Audio data or file path\n            text: str,                            # Transcript text to align against\n            **kwargs\n        ) -&gt; ForcedAlignResult:  # Word-level alignment result\n        \"List of supported audio file extensions (without the dot).\"\n    \n    def execute(\n            self,\n            audio: Union[AudioData, str, Path],  # Audio data or file path\n            text: str,                            # Transcript text to align against\n            **kwargs\n        ) -&gt; ForcedAlignResult:  # Word-level alignment result\n        \"Perform forced alignment of text against audio.\n\nWhen called via Proxy, AudioData is auto-converted to a file path string\nbefore reaching this method in the Worker process.\"\n\n\n\nForced Alignment Storage (forced_alignment_storage.ipynb)\n\nStandardized SQLite storage for forced alignment results with content hashing\n\n\nImport\nfrom cjm_transcription_plugin_system.forced_alignment_storage import (\n    ForcedAlignmentRow,\n    ForcedAlignmentStorage\n)\n\n\nClasses\n@dataclass\nclass ForcedAlignmentRow:\n    \"A single row from the forced_alignments table.\"\n    \n    job_id: str  # Unique job identifier\n    audio_path: str  # Path to the source audio file\n    audio_hash: str  # Hash of source audio in \"algo:hexdigest\" format\n    text: str  # Input transcript text that was aligned\n    text_hash: str  # Hash of input text in \"algo:hexdigest\" format\n    items: Optional[List[Dict[str, Any]]]  # Serialized ForcedAlignItems\n    metadata: Optional[Dict[str, Any]]  # Plugin metadata\n    created_at: Optional[float]  # Unix timestamp\nclass ForcedAlignmentStorage:\n    def __init__(\n        self,\n        db_path: str  # Absolute path to the SQLite database file\n    )\n    \"Standardized SQLite storage for forced alignment results.\"\n    \n    def __init__(\n            self,\n            db_path: str  # Absolute path to the SQLite database file\n        )\n        \"Initialize storage and create table if needed.\"\n    \n    def save(\n            self,\n            job_id: str,        # Unique job identifier\n            audio_path: str,    # Path to the source audio file\n            audio_hash: str,    # Hash of source audio in \"algo:hexdigest\" format\n            text: str,          # Input transcript text\n            text_hash: str,     # Hash of input text in \"algo:hexdigest\" format\n            items: Optional[List[Dict[str, Any]]] = None,  # Serialized ForcedAlignItems\n            metadata: Optional[Dict[str, Any]] = None       # Plugin metadata\n        ) -&gt; None\n        \"Save a forced alignment result to the database.\"\n    \n    def get_by_job_id(\n            self,\n            job_id: str  # Job identifier to look up\n        ) -&gt; Optional[ForcedAlignmentRow]:  # Row or None if not found\n        \"Retrieve a forced alignment result by job ID.\"\n    \n    def list_jobs(\n            self,\n            limit: int = 100  # Maximum number of rows to return\n        ) -&gt; List[ForcedAlignmentRow]:  # List of forced alignment rows\n        \"List forced alignment jobs ordered by creation time (newest first).\"\n    \n    def verify_audio(\n            self,\n            job_id: str  # Job identifier to verify\n        ) -&gt; Optional[bool]:  # True if audio matches, False if tampered, None if job not found\n        \"Verify the source audio file still matches its stored hash.\"\n    \n    def verify_text(\n            self,\n            job_id: str  # Job identifier to verify\n        ) -&gt; Optional[bool]:  # True if text matches, False if tampered, None if job not found\n        \"Verify the input text still matches its stored hash.\"\n\n\n\nTranscription Plugin Interface (plugin_interface.ipynb)\n\nDomain-specific plugin interface for audio transcription\n\n\nImport\nfrom cjm_transcription_plugin_system.plugin_interface import (\n    TranscriptionPlugin\n)\n\n\nClasses\nclass TranscriptionPlugin(PluginInterface):\n    \"\"\"\n    Abstract base class for all transcription plugins.\n    \n    Extends PluginInterface with transcription-specific requirements:\n    - `supported_formats`: List of audio file extensions this plugin can handle\n    - `execute`: Accepts audio path (str) or AudioData, returns TranscriptionResult\n    \n    NOTE: When running via RemotePluginProxy, AudioData objects are automatically\n    serialized to temp files via FileBackedDTO, so the Worker receives a file path.\n    \"\"\"\n    \n    def supported_formats(self) -&gt; List[str]: # e.g., ['wav', 'mp3', 'flac']\n            \"\"\"List of supported audio file extensions (without the dot).\"\"\"\n            ...\n    \n        @abstractmethod\n        def execute(\n            self,\n            audio: Union[AudioData, str, Path], # Audio data or file path\n            **kwargs\n        ) -&gt; TranscriptionResult: # Transcription result with text, confidence, segments\n        \"List of supported audio file extensions (without the dot).\"\n    \n    def execute(\n            self,\n            audio: Union[AudioData, str, Path], # Audio data or file path\n            **kwargs\n        ) -&gt; TranscriptionResult: # Transcription result with text, confidence, segments\n        \"Transcribe audio to text.\n\nWhen called via Proxy, AudioData is auto-converted to a file path string\nbefore reaching this method in the Worker process.\"\n\n\n\nTranscription Storage (storage.ipynb)\n\nStandardized SQLite storage for transcription results with content hashing\n\n\nImport\nfrom cjm_transcription_plugin_system.storage import (\n    TranscriptionRow,\n    TranscriptionStorage\n)\n\n\nClasses\n@dataclass\nclass TranscriptionRow:\n    \"A single row from the transcriptions table.\"\n    \n    job_id: str  # Unique job identifier\n    audio_path: str  # Path to the source audio file\n    audio_hash: str  # Hash of source audio in \"algo:hexdigest\" format\n    text: str  # Transcribed text output\n    text_hash: str  # Hash of transcribed text in \"algo:hexdigest\" format\n    segments: Optional[List[Dict[str, Any]]]  # Timestamped segments\n    metadata: Optional[Dict[str, Any]]  # Plugin metadata\n    created_at: Optional[float]  # Unix timestamp\nclass TranscriptionStorage:\n    def __init__(\n        self,\n        db_path: str  # Absolute path to the SQLite database file\n    )\n    \"Standardized SQLite storage for transcription results.\"\n    \n    def __init__(\n            self,\n            db_path: str  # Absolute path to the SQLite database file\n        )\n        \"Initialize storage and create table if needed.\"\n    \n    def save(\n            self,\n            job_id: str,        # Unique job identifier\n            audio_path: str,    # Path to the source audio file\n            audio_hash: str,    # Hash of source audio in \"algo:hexdigest\" format\n            text: str,          # Transcribed text output\n            text_hash: str,     # Hash of transcribed text in \"algo:hexdigest\" format\n            segments: Optional[List[Dict[str, Any]]] = None,  # Timestamped segments\n            metadata: Optional[Dict[str, Any]] = None         # Plugin metadata\n        ) -&gt; None\n        \"Save a transcription result to the database.\"\n    \n    def get_by_job_id(\n            self,\n            job_id: str  # Job identifier to look up\n        ) -&gt; Optional[TranscriptionRow]:  # Row or None if not found\n        \"Retrieve a transcription result by job ID.\"\n    \n    def list_jobs(\n            self,\n            limit: int = 100  # Maximum number of rows to return\n        ) -&gt; List[TranscriptionRow]:  # List of transcription rows\n        \"List transcription jobs ordered by creation time (newest first).\"\n    \n    def verify_audio(\n            self,\n            job_id: str  # Job identifier to verify\n        ) -&gt; Optional[bool]:  # True if audio matches, False if tampered, None if job not found\n        \"Verify the source audio file still matches its stored hash.\"\n    \n    def verify_text(\n            self,\n            job_id: str  # Job identifier to verify\n        ) -&gt; Optional[bool]:  # True if text matches, False if tampered, None if job not found\n        \"Verify the transcription text still matches its stored hash.\"",
+    "crumbs": [
+      "cjm-transcription-plugin-system"
+    ]
+  },
+  {
+    "objectID": "core.html",
+    "href": "core.html",
+    "title": "Core Data Structures",
+    "section": "",
+    "text": "source",
+    "crumbs": [
+      "Core Data Structures"
+    ]
+  },
+  {
+    "objectID": "core.html#testing-audiodata",
+    "href": "core.html#testing-audiodata",
+    "title": "Core Data Structures",
+    "section": "Testing AudioData",
+    "text": "Testing AudioData\nAudioData implements the FileBackedDTO protocol, which means the RemotePluginProxy will automatically serialize it to a temp file before sending to the Worker.\n\n# Test AudioData creation\naudio = AudioData(\n    samples=np.sin(np.linspace(0, 2*np.pi*440, 16000)),  # 1 second of 440Hz tone\n    sample_rate=16000\n)\n\nprint(f\"AudioData: {len(audio.samples)} samples at {audio.sample_rate}Hz\")\n\n# Test FileBackedDTO protocol\nprint(f\"\\nImplements FileBackedDTO: {isinstance(audio, FileBackedDTO)}\")\n\n# Test to_temp_file (this is what the Proxy calls)\ntemp_path = audio.to_temp_file()\nprint(f\"Saved to temp file: {temp_path}\")\n\n# Verify the file exists and can be read back\nimport os\nprint(f\"File exists: {os.path.exists(temp_path)}\")\nprint(f\"File size: {os.path.getsize(temp_path)} bytes\")\n\n# Clean up\nos.unlink(temp_path)\n\nAudioData: 16000 samples at 16000Hz\n\nImplements FileBackedDTO: True\nSaved to temp file: /tmp/tmpadmpzdp4.wav\nFile exists: True\nFile size: 32044 bytes\n\n\n\n# Test TranscriptionResult\nresult = TranscriptionResult(\n    text=\"Hello world\",\n    confidence=0.95,\n    segments=[\n        {\"start\": 0.0, \"end\": 0.5, \"text\": \"Hello\"},\n        {\"start\": 0.5, \"end\": 1.0, \"text\": \"world\"}\n    ],\n    metadata={\"model\": \"whisper-large-v3\", \"language\": \"en\"}\n)\n\nprint(f\"Text: {result.text}\")\nprint(f\"Confidence: {result.confidence}\")\nprint(f\"Segments: {result.segments}\")\nprint(f\"Metadata: {result.metadata}\")\n\nText: Hello world\nConfidence: 0.95\nSegments: [{'start': 0.0, 'end': 0.5, 'text': 'Hello'}, {'start': 0.5, 'end': 1.0, 'text': 'world'}]\nMetadata: {'model': 'whisper-large-v3', 'language': 'en'}\n\n\n\n# Test minimal result (only text required)\nminimal = TranscriptionResult(text=\"Just the text\")\nprint(f\"Minimal result: {minimal}\")\n\n# Test from_file class method (if audio file available)\n# audio_loaded = AudioData.from_file(\"path/to/audio.wav\")\n\nMinimal result: TranscriptionResult(text='Just the text', confidence=None, segments=None, metadata={})",
+    "crumbs": [
+      "Core Data Structures"
+    ]
+  },
+  {
+    "objectID": "forced_alignment_core.html",
+    "href": "forced_alignment_core.html",
+    "title": "Forced Alignment Core",
+    "section": "",
+    "text": "A single word-level alignment result from a forced alignment model. Each item represents one word with its temporal boundaries in the audio.\nNote that forced alignment models typically strip punctuation from the input text. The consuming service is responsible for mapping these stripped words back to the original punctuated text.\n\nsource\n\n\n\ndef ForcedAlignItem(\n    text:str, start_time:float, end_time:float\n)-&gt;None:\n\nA single word-level alignment result.",
+    "crumbs": [
+      "Forced Alignment Core"
+    ]
+  },
+  {
+    "objectID": "forced_alignment_core.html#forcedalignitem",
+    "href": "forced_alignment_core.html#forcedalignitem",
+    "title": "Forced Alignment Core",
+    "section": "",
+    "text": "A single word-level alignment result from a forced alignment model. Each item represents one word with its temporal boundaries in the audio.\nNote that forced alignment models typically strip punctuation from the input text. The consuming service is responsible for mapping these stripped words back to the original punctuated text.\n\nsource\n\n\n\ndef ForcedAlignItem(\n    text:str, start_time:float, end_time:float\n)-&gt;None:\n\nA single word-level alignment result.",
+    "crumbs": [
+      "Forced Alignment Core"
+    ]
+  },
+  {
+    "objectID": "forced_alignment_core.html#forcedalignresult",
+    "href": "forced_alignment_core.html#forcedalignresult",
+    "title": "Forced Alignment Core",
+    "section": "ForcedAlignResult",
+    "text": "ForcedAlignResult\nStandardized output for all forced alignment plugins. Contains the list of word-level alignments and optional metadata about the alignment run.\n\nsource\n\nForcedAlignResult\n\ndef ForcedAlignResult(\n    items:List, metadata:Dict=&lt;factory&gt;\n)-&gt;None:\n\nStandardized output for all forced alignment plugins.",
+    "crumbs": [
+      "Forced Alignment Core"
+    ]
+  },
+  {
+    "objectID": "forced_alignment_core.html#testing",
+    "href": "forced_alignment_core.html#testing",
+    "title": "Forced Alignment Core",
+    "section": "Testing",
+    "text": "Testing\n\n# Test ForcedAlignItem creation\nitem = ForcedAlignItem(text=\"November\", start_time=1.04, end_time=1.6)\nprint(f\"Item: {item}\")\nassert item.text == \"November\"\nassert item.start_time == 1.04\nassert item.end_time == 1.6\n\n# Test serialization round-trip\nd = asdict(item)\nassert d == {\"text\": \"November\", \"start_time\": 1.04, \"end_time\": 1.6}\nreconstructed = ForcedAlignItem(**d)\nassert reconstructed == item\nprint(f\"Serialization round-trip: OK\")\n\nItem: ForcedAlignItem(text='November', start_time=1.04, end_time=1.6)\nSerialization round-trip: OK\n\n\n\n# Test ForcedAlignResult creation\nitems = [\n    ForcedAlignItem(text=\"November\", start_time=1.04, end_time=1.6),\n    ForcedAlignItem(text=\"the\", start_time=1.6, end_time=1.68),\n    ForcedAlignItem(text=\"10th\", start_time=1.76, end_time=2.08),\n]\n\nresult = ForcedAlignResult(\n    items=items,\n    metadata={\"model_id\": \"Qwen/Qwen3-ForcedAligner-0.6B\", \"language\": \"English\"}\n)\n\nprint(f\"Result: {len(result.items)} items\")\nprint(f\"Metadata: {result.metadata}\")\nassert len(result.items) == 3\nassert result.items[0].text == \"November\"\nassert result.metadata[\"model_id\"] == \"Qwen/Qwen3-ForcedAligner-0.6B\"\n\nResult: 3 items\nMetadata: {'model_id': 'Qwen/Qwen3-ForcedAligner-0.6B', 'language': 'English'}\n\n\n\n# Test ForcedAlignResult serialization round-trip\nd = asdict(result)\nassert len(d[\"items\"]) == 3\nassert d[\"items\"][0] == {\"text\": \"November\", \"start_time\": 1.04, \"end_time\": 1.6}\n\n# Reconstruct from dict\nreconstructed = ForcedAlignResult(\n    items=[ForcedAlignItem(**item_dict) for item_dict in d[\"items\"]],\n    metadata=d[\"metadata\"]\n)\nassert len(reconstructed.items) == 3\nassert reconstructed.items[0] == result.items[0]\nassert reconstructed.metadata == result.metadata\nprint(\"ForcedAlignResult serialization round-trip: OK\")\n\nForcedAlignResult serialization round-trip: OK\n\n\n\n# Test minimal result (empty items, no metadata)\nminimal = ForcedAlignResult(items=[])\nassert minimal.items == []\nassert minimal.metadata == {}\nprint(f\"Minimal result: {minimal}\")\n\nMinimal result: ForcedAlignResult(items=[], metadata={})",
+    "crumbs": [
+      "Forced Alignment Core"
+    ]
+  },
+  {
+    "objectID": "storage.html",
+    "href": "storage.html",
+    "title": "Transcription Storage",
+    "section": "",
+    "text": "A dataclass representing a single row in the standardized transcriptions table. This provides a type-safe way to work with stored transcription results.\n\nsource\n\n\n\ndef TranscriptionRow(\n    job_id:str, audio_path:str, audio_hash:str, text:str, text_hash:str, segments:Optional=None,\n    metadata:Optional=None, created_at:Optional=None\n)-&gt;None:\n\nA single row from the transcriptions table.\n\n# Test TranscriptionRow creation\nrow = TranscriptionRow(\n    job_id=\"job_abc123\",\n    audio_path=\"/tmp/test.mp3\",\n    audio_hash=\"sha256:\" + \"a\" * 64,\n    text=\"Hello world\",\n    text_hash=\"sha256:\" + \"b\" * 64,\n    segments=[{\"start\": 0.0, \"end\": 1.0, \"text\": \"Hello world\"}],\n    metadata={\"model\": \"whisper-large-v3\"}\n)\n\nprint(f\"Row: job_id={row.job_id}, text={row.text[:20]}...\")\nprint(f\"Audio hash: {row.audio_hash[:20]}...\")\nprint(f\"Text hash: {row.text_hash[:20]}...\")\n\nRow: job_id=job_abc123, text=Hello world...\nAudio hash: sha256:aaaaaaaaaaaaa...\nText hash: sha256:bbbbbbbbbbbbb...",
+    "crumbs": [
+      "Transcription Storage"
+    ]
+  },
+  {
+    "objectID": "storage.html#transcriptionrow",
+    "href": "storage.html#transcriptionrow",
+    "title": "Transcription Storage",
+    "section": "",
+    "text": "A dataclass representing a single row in the standardized transcriptions table. This provides a type-safe way to work with stored transcription results.\n\nsource\n\n\n\ndef TranscriptionRow(\n    job_id:str, audio_path:str, audio_hash:str, text:str, text_hash:str, segments:Optional=None,\n    metadata:Optional=None, created_at:Optional=None\n)-&gt;None:\n\nA single row from the transcriptions table.\n\n# Test TranscriptionRow creation\nrow = TranscriptionRow(\n    job_id=\"job_abc123\",\n    audio_path=\"/tmp/test.mp3\",\n    audio_hash=\"sha256:\" + \"a\" * 64,\n    text=\"Hello world\",\n    text_hash=\"sha256:\" + \"b\" * 64,\n    segments=[{\"start\": 0.0, \"end\": 1.0, \"text\": \"Hello world\"}],\n    metadata={\"model\": \"whisper-large-v3\"}\n)\n\nprint(f\"Row: job_id={row.job_id}, text={row.text[:20]}...\")\nprint(f\"Audio hash: {row.audio_hash[:20]}...\")\nprint(f\"Text hash: {row.text_hash[:20]}...\")\n\nRow: job_id=job_abc123, text=Hello world...\nAudio hash: sha256:aaaaaaaaaaaaa...\nText hash: sha256:bbbbbbbbbbbbb...",
+    "crumbs": [
+      "Transcription Storage"
+    ]
+  },
+  {
+    "objectID": "storage.html#transcriptionstorage",
+    "href": "storage.html#transcriptionstorage",
+    "title": "Transcription Storage",
+    "section": "TranscriptionStorage",
+    "text": "TranscriptionStorage\nStandardized SQLite storage that all transcription plugins should use. Defines the canonical schema for the transcriptions table with content hash columns for traceability.\nSchema:\nCREATE TABLE IF NOT EXISTS transcriptions (\n    id INTEGER PRIMARY KEY AUTOINCREMENT,\n    job_id TEXT UNIQUE NOT NULL,\n    audio_path TEXT NOT NULL,\n    audio_hash TEXT NOT NULL,\n    text TEXT NOT NULL,\n    text_hash TEXT NOT NULL,\n    segments JSON,\n    metadata JSON,\n    created_at REAL NOT NULL\n);\nThe audio_hash and text_hash columns use the self-describing \"algo:hexdigest\" format (e.g., \"sha256:a3f2b8...\"), enabling downstream consumers to verify content integrity.\n\nsource\n\nTranscriptionStorage\n\ndef TranscriptionStorage(\n    db_path:str, # Absolute path to the SQLite database file\n):\n\nStandardized SQLite storage for transcription results.",
+    "crumbs": [
+      "Transcription Storage"
+    ]
+  },
+  {
+    "objectID": "storage.html#testing",
+    "href": "storage.html#testing",
+    "title": "Transcription Storage",
+    "section": "Testing",
+    "text": "Testing\n\nimport tempfile\nimport os\n\n# Create storage with temp database\ntmp_db = tempfile.NamedTemporaryFile(suffix=\".db\", delete=False)\nstorage = TranscriptionStorage(tmp_db.name)\n\nprint(f\"Storage initialized at: {tmp_db.name}\")\n\nStorage initialized at: /tmp/tmp0clqja4v.db\n\n\n\n# Save a transcription result with hashes\ntest_text = \"Laying Plans Sun Tzu said, The art of war is of vital importance to the state.\"\ntext_hash = hash_bytes(test_text.encode())\naudio_hash = \"sha256:\" + \"e3b0c44298\" * 6 + \"e3b0\"  # Simulated audio hash\n\nstorage.save(\n    job_id=\"job_test_001\",\n    audio_path=\"/tmp/test_audio.mp3\",\n    audio_hash=audio_hash,\n    text=test_text,\n    text_hash=text_hash,\n    segments=[{\"start\": 0.0, \"end\": 5.0, \"text\": test_text}],\n    metadata={\"model\": \"whisper-large-v3\", \"language\": \"en\"}\n)\n\nprint(f\"Saved job_test_001\")\nprint(f\"Text hash: {text_hash}\")\n\nSaved job_test_001\nText hash: sha256:83efd1674de9fcf20e5c2edacf9246f7f34ad04bf07ddcb2b4e2765269e1edd1\n\n\n\n# Retrieve by job ID\nrow = storage.get_by_job_id(\"job_test_001\")\nassert row is not None\nassert row.job_id == \"job_test_001\"\nassert row.text == test_text\nassert row.text_hash == text_hash\nassert row.audio_hash == audio_hash\nassert row.segments is not None\nassert row.metadata[\"model\"] == \"whisper-large-v3\"\nassert row.created_at is not None\n\nprint(f\"Retrieved: {row.job_id}\")\nprint(f\"Text: {row.text[:40]}...\")\nprint(f\"Audio hash: {row.audio_hash[:30]}...\")\nprint(f\"Text hash: {row.text_hash[:30]}...\")\nprint(f\"Created at: {row.created_at}\")\n\nRetrieved: job_test_001\nText: Laying Plans Sun Tzu said, The art of wa...\nAudio hash: sha256:e3b0c44298e3b0c44298e3b...\nText hash: sha256:83efd1674de9fcf20e5c2ed...\nCreated at: 1770425259.7641876\n\n\n\n# Missing job returns None\nmissing = storage.get_by_job_id(\"nonexistent\")\nassert missing is None\nprint(\"get_by_job_id returns None for missing job: OK\")\n\nget_by_job_id returns None for missing job: OK\n\n\n\n# Save another and test list_jobs\nstorage.save(\n    job_id=\"job_test_002\",\n    audio_path=\"/tmp/test_audio_2.mp3\",\n    audio_hash=\"sha256:\" + \"f\" * 64,\n    text=\"Second transcription.\",\n    text_hash=hash_bytes(b\"Second transcription.\")\n)\n\njobs = storage.list_jobs()\nassert len(jobs) == 2\n# Newest first\nassert jobs[0].job_id == \"job_test_002\"\nassert jobs[1].job_id == \"job_test_001\"\n\nprint(f\"list_jobs returned {len(jobs)} rows (newest first): {[j.job_id for j in jobs]}\")\n\nlist_jobs returned 2 rows (newest first): ['job_test_002', 'job_test_001']\n\n\n\n# Test text verification\nassert storage.verify_text(\"job_test_001\") == True\nprint(\"verify_text with unchanged text: True\")\n\n# Tamper with text directly in DB\nwith sqlite3.connect(tmp_db.name) as con:\n    con.execute(\"UPDATE transcriptions SET text = 'TAMPERED' WHERE job_id = 'job_test_001'\")\n\nassert storage.verify_text(\"job_test_001\") == False\nprint(\"verify_text after tampering: False\")\n\n# Missing job returns None\nassert storage.verify_text(\"nonexistent\") is None\nprint(\"verify_text for missing job: None\")\n\nverify_text with unchanged text: True\nverify_text after tampering: False\nverify_text for missing job: None\n\n\n\n# Cleanup\nos.unlink(tmp_db.name)\nprint(\"Cleanup complete\")\n\nCleanup complete",
+    "crumbs": [
+      "Transcription Storage"
+    ]
+  }
+]
