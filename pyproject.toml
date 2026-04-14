@@ -1,3 +1,30 @@
 [build-system]
-requires = ["setuptools>=64.0,<76.0"]
+requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "cjm-transcription-plugin-system"
+dynamic = ["version"]
+description = "A flexible plugin system for audio transcription intended to make it easy to add support for multiple backends."
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "Apache-2.0"}
+authors = [{name = "Christian J. Mills", email = "9126128+cj-mills@users.noreply.github.com"}]
+keywords = ['nbdev', 'jupyter', 'notebook', 'python']
+classifiers = ["Natural Language :: English", "Intended Audience :: Developers", "Development Status :: 3 - Alpha", "Programming Language :: Python :: 3", "Programming Language :: Python :: 3 :: Only"]
+dependencies = ['nbdev', 'numpy', 'jsonschema', 'cjm_plugin_system', 'soundfile']
+
+[project.urls]
+Repository = "https://github.com/cj-mills/cjm-transcription-plugin-system"
+Documentation = "https://cj-mills.github.io/cjm-transcription-plugin-system"
+
+[project.entry-points.nbdev]
+cjm_transcription_plugin_system = "cjm_transcription_plugin_system._modidx:d"
+
+[tool.setuptools.dynamic]
+version = {attr = "cjm_transcription_plugin_system.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["cjm_transcription_plugin_system"]
+
+[tool.nbdev]
