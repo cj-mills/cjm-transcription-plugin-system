@@ -25,6 +25,6 @@ cjm_transcription_plugin_system = "cjm_transcription_plugin_system._modidx:d"
 version = {attr = "cjm_transcription_plugin_system.__version__"}
 
 [tool.setuptools.packages.find]
-include = ["cjm_transcription_plugin_system"]
+include = ["cjm_transcription_plugin_system*"]
 
 [tool.nbdev]
