@@ -14,21 +14,24 @@ from typing import List, Union
 
 from cjm_plugin_system.core.interface import PluginInterface
 
-from .core import AudioData, TranscriptionResult
+from .core import TranscriptionResult
 
 # %% ../nbs/plugin_interface.ipynb #26808a7c
 class TranscriptionPlugin(PluginInterface):
     """
     Abstract base class for all transcription plugins.
-    
+
     Extends PluginInterface with transcription-specific requirements:
     - `supported_formats`: List of audio file extensions this plugin can handle
-    - `execute`: Accepts audio path (str) or AudioData, returns TranscriptionResult
-    
-    NOTE: When running via RemotePluginProxy, AudioData objects are automatically
-    serialized to temp files via FileBackedDTO, so the Worker receives a file path.
+    - `execute`: Accepts an audio file path (str or Path), returns TranscriptionResult
+
+    Input contract: plugins receive a path to a decodable audio file. Producing a
+    model-ready file (format / sample-rate / channel normalization) is the caller's
+    responsibility — e.g. an upstream ffmpeg step in the orchestration pipeline —
+    not the plugin's. This keeps the interface library dependency-light (no audio
+    I/O deps such as numpy/soundfile in the shared consumer environment).
     """
-    
+
     # Entry point group for discovery (legacy, kept for metadata)
     entry_point_group = "transcription.plugins"
 
@@ -41,13 +44,13 @@ class TranscriptionPlugin(PluginInterface):
     @abstractmethod
     def execute(
         self,
-        audio: Union[AudioData, str, Path], # Audio data or file path
+        audio: Union[str, Path], # Path to a decodable audio file
         **kwargs
     ) -> TranscriptionResult: # Transcription result with text, confidence, segments
         """
         Transcribe audio to text.
-        
-        When called via Proxy, AudioData is auto-converted to a file path string
-        before reaching this method in the Worker process.
+
+        `audio` is a path to a decodable audio file; the caller guarantees it is in
+        a form the plugin/model can consume.
         """
         ...

@@ -14,7 +14,6 @@ from typing import List, Union
 
 from cjm_plugin_system.core.interface import PluginInterface
 
-from .core import AudioData
 from .forced_alignment_core import ForcedAlignResult
 
 # %% ../nbs/forced_alignment_interface.ipynb #cell-interface
@@ -24,10 +23,12 @@ class ForcedAlignmentPlugin(PluginInterface):
 
     Extends PluginInterface with forced-alignment-specific requirements:
     - `supported_formats`: List of audio file extensions this plugin can handle
-    - `execute`: Accepts audio path and transcript text, returns ForcedAlignResult
+    - `execute`: Accepts an audio file path and transcript text, returns ForcedAlignResult
 
-    NOTE: When running via RemotePluginProxy, AudioData objects are automatically
-    serialized to temp files via FileBackedDTO, so the Worker receives a file path.
+    Input contract: plugins receive a path to a decodable audio file. Producing a
+    model-ready file (format / sample-rate / channel normalization) is the caller's
+    responsibility — e.g. an upstream ffmpeg step in the orchestration pipeline —
+    not the plugin's. This keeps the interface library dependency-light.
     """
 
     entry_point_group = "transcription.forced_alignment_plugins"
@@ -41,14 +42,14 @@ class ForcedAlignmentPlugin(PluginInterface):
     @abstractmethod
     def execute(
         self,
-        audio: Union[AudioData, str, Path],  # Audio data or file path
-        text: str,                            # Transcript text to align against
+        audio: Union[str, Path],  # Path to a decodable audio file
+        text: str,                # Transcript text to align against
         **kwargs
     ) -> ForcedAlignResult:  # Word-level alignment result
         """
         Perform forced alignment of text against audio.
 
-        When called via Proxy, AudioData is auto-converted to a file path string
-        before reaching this method in the Worker process.
+        `audio` is a path to a decodable audio file; the caller guarantees it is in
+        a form the plugin/model can consume.
         """
         ...

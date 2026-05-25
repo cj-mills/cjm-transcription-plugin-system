@@ -9,6 +9,7 @@ __all__ = ['ForcedAlignmentRow', 'ForcedAlignmentStorage']
 
 # %% ../nbs/forced_alignment_storage.ipynb #cell-imports
 import json
+import logging
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -86,6 +87,40 @@ class ForcedAlignmentStorage:
                     time.time()
                 )
             )
+
+    def save_with_logging(
+        self,
+        *,
+        job_id: str,        # Unique job identifier
+        audio_path: str,    # Path to the source audio file
+        audio_hash: str,    # Hash of source audio in "algo:hexdigest" format
+        text: str,          # Input transcript text
+        text_hash: str,     # Hash of input text in "algo:hexdigest" format
+        items: Optional[List[Dict[str, Any]]] = None,  # Serialized ForcedAlignItems
+        metadata: Optional[Dict[str, Any]] = None,      # Plugin metadata
+        logger: Optional[logging.Logger] = None         # Optional logger for success/failure messages
+    ) -> bool:  # True if saved; False if the save failed (error logged, not raised)
+        """Save a result, logging success/failure. Failures are logged and swallowed (returns False).
+
+        Centralizes the try/save/log/except block every forced-alignment plugin reimplements.
+        Returns True on success so callers can gate post-save side effects on the result."""
+        try:
+            self.save(
+                job_id=job_id,
+                audio_path=audio_path,
+                audio_hash=audio_hash,
+                text=text,
+                text_hash=text_hash,
+                items=items,
+                metadata=metadata,
+            )
+            if logger:
+                logger.info(f"Saved result to DB (Job: {job_id})")
+            return True
+        except Exception as e:
+            if logger:
+                logger.error(f"Failed to save to DB: {e}")
+            return False
 
     def get_by_job_id(
         self,
