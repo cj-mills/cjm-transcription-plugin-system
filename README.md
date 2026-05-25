@@ -12,7 +12,7 @@ pip install cjm_transcription_plugin_system
 ## Project Structure
 
     nbs/
-    ├── core.ipynb                       # DTOs for audio transcription with FileBackedDTO support for zero-copy transfer
+    ├── core.ipynb                       # Standardized result DTO for audio transcription plugins
     ├── forced_alignment_core.ipynb      # Data structures for word-level forced alignment results
     ├── forced_alignment_interface.ipynb # Domain-specific plugin interface for word-level audio-text alignment
     ├── forced_alignment_storage.ipynb   # Standardized SQLite storage for forced alignment results with content hashing
@@ -33,11 +33,10 @@ graph LR
     storage[storage<br/>Transcription Storage]
 
     forced_alignment_interface --> forced_alignment_core
-    forced_alignment_interface --> core
     plugin_interface --> core
 ```
 
-*3 cross-module dependencies detected*
+*2 cross-module dependencies detected*
 
 ## CLI Reference
 
@@ -49,53 +48,17 @@ Detailed documentation for each module in the project:
 
 ### Core Data Structures (`core.ipynb`)
 
-> DTOs for audio transcription with FileBackedDTO support for zero-copy
-> transfer
+> Standardized result DTO for audio transcription plugins
 
 #### Import
 
 ``` python
 from cjm_transcription_plugin_system.core import (
-    AudioData,
     TranscriptionResult
 )
 ```
 
 #### Classes
-
-``` python
-@dataclass
-class AudioData:
-    """
-    Container for raw audio data.
-    Implements FileBackedDTO for zero-copy transfer between Host and Worker processes.
-    """
-    
-    samples: np.ndarray  # Audio sample data as numpy array
-    sample_rate: int  # Sample rate in Hz (e.g., 16000, 44100)
-    
-    def to_temp_file(self) -> str: # Absolute path to temporary WAV file
-            """Save audio to a temp file for zero-copy transfer to Worker process."""
-            # Create temp file (delete=False so Worker can read it)
-            tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-            
-            # Ensure float32 format
-            audio = self.samples
-            if audio.dtype != np.float32
-        "Save audio to a temp file for zero-copy transfer to Worker process."
-    
-    def to_dict(self) -> Dict[str, Any]: # Serialized representation
-            """Convert to dictionary for smaller payloads."""
-            return {
-                "samples": self.samples.tolist(),
-        "Convert to dictionary for smaller payloads."
-    
-    def from_file(
-            cls,
-            filepath: str # Path to audio file
-        ) -> "AudioData": # AudioData instance
-        "Load audio from a file."
-```
 
 ``` python
 @dataclass
@@ -163,10 +126,12 @@ class ForcedAlignmentPlugin(PluginInterface):
     
     Extends PluginInterface with forced-alignment-specific requirements:
     - `supported_formats`: List of audio file extensions this plugin can handle
-    - `execute`: Accepts audio path and transcript text, returns ForcedAlignResult
+    - `execute`: Accepts an audio file path and transcript text, returns ForcedAlignResult
     
-    NOTE: When running via RemotePluginProxy, AudioData objects are automatically
-    serialized to temp files via FileBackedDTO, so the Worker receives a file path.
+    Input contract: plugins receive a path to a decodable audio file. Producing a
+    model-ready file (format / sample-rate / channel normalization) is the caller's
+    responsibility — e.g. an upstream ffmpeg step in the orchestration pipeline —
+    not the plugin's. This keeps the interface library dependency-light.
     """
     
     def supported_formats(self) -> List[str]:  # e.g., ['wav', 'mp3', 'flac']
@@ -176,22 +141,22 @@ class ForcedAlignmentPlugin(PluginInterface):
         @abstractmethod
         def execute(
             self,
-            audio: Union[AudioData, str, Path],  # Audio data or file path
-            text: str,                            # Transcript text to align against
+            audio: Union[str, Path],  # Path to a decodable audio file
+            text: str,                # Transcript text to align against
             **kwargs
         ) -> ForcedAlignResult:  # Word-level alignment result
         "List of supported audio file extensions (without the dot)."
     
     def execute(
             self,
-            audio: Union[AudioData, str, Path],  # Audio data or file path
-            text: str,                            # Transcript text to align against
+            audio: Union[str, Path],  # Path to a decodable audio file
+            text: str,                # Transcript text to align against
             **kwargs
         ) -> ForcedAlignResult:  # Word-level alignment result
         "Perform forced alignment of text against audio.
 
-When called via Proxy, AudioData is auto-converted to a file path string
-before reaching this method in the Worker process."
+`audio` is a path to a decodable audio file; the caller guarantees it is in
+a form the plugin/model can consume."
 ```
 
 ### Forced Alignment Storage (`forced_alignment_storage.ipynb`)
@@ -251,6 +216,23 @@ class ForcedAlignmentStorage:
         ) -> None
         "Save a forced alignment result to the database."
     
+    def save_with_logging(
+            self,
+            *,
+            job_id: str,        # Unique job identifier
+            audio_path: str,    # Path to the source audio file
+            audio_hash: str,    # Hash of source audio in "algo:hexdigest" format
+            text: str,          # Input transcript text
+            text_hash: str,     # Hash of input text in "algo:hexdigest" format
+            items: Optional[List[Dict[str, Any]]] = None,  # Serialized ForcedAlignItems
+            metadata: Optional[Dict[str, Any]] = None,      # Plugin metadata
+            logger: Optional[logging.Logger] = None         # Optional logger for success/failure messages
+        ) -> bool:  # True if saved; False if the save failed (error logged, not raised)
+        "Save a result, logging success/failure. Failures are logged and swallowed (returns False).
+
+Centralizes the try/save/log/except block every forced-alignment plugin reimplements.
+Returns True on success so callers can gate post-save side effects on the result."
+    
     def get_by_job_id(
             self,
             job_id: str  # Job identifier to look up
@@ -297,10 +279,13 @@ class TranscriptionPlugin(PluginInterface):
     
     Extends PluginInterface with transcription-specific requirements:
     - `supported_formats`: List of audio file extensions this plugin can handle
-    - `execute`: Accepts audio path (str) or AudioData, returns TranscriptionResult
+    - `execute`: Accepts an audio file path (str or Path), returns TranscriptionResult
     
-    NOTE: When running via RemotePluginProxy, AudioData objects are automatically
-    serialized to temp files via FileBackedDTO, so the Worker receives a file path.
+    Input contract: plugins receive a path to a decodable audio file. Producing a
+    model-ready file (format / sample-rate / channel normalization) is the caller's
+    responsibility — e.g. an upstream ffmpeg step in the orchestration pipeline —
+    not the plugin's. This keeps the interface library dependency-light (no audio
+    I/O deps such as numpy/soundfile in the shared consumer environment).
     """
     
     def supported_formats(self) -> List[str]: # e.g., ['wav', 'mp3', 'flac']
@@ -310,20 +295,20 @@ class TranscriptionPlugin(PluginInterface):
         @abstractmethod
         def execute(
             self,
-            audio: Union[AudioData, str, Path], # Audio data or file path
+            audio: Union[str, Path], # Path to a decodable audio file
             **kwargs
         ) -> TranscriptionResult: # Transcription result with text, confidence, segments
         "List of supported audio file extensions (without the dot)."
     
     def execute(
             self,
-            audio: Union[AudioData, str, Path], # Audio data or file path
+            audio: Union[str, Path], # Path to a decodable audio file
             **kwargs
         ) -> TranscriptionResult: # Transcription result with text, confidence, segments
         "Transcribe audio to text.
 
-When called via Proxy, AudioData is auto-converted to a file path string
-before reaching this method in the Worker process."
+`audio` is a path to a decodable audio file; the caller guarantees it is in
+a form the plugin/model can consume."
 ```
 
 ### Transcription Storage (`storage.ipynb`)
@@ -382,6 +367,23 @@ class TranscriptionStorage:
             metadata: Optional[Dict[str, Any]] = None         # Plugin metadata
         ) -> None
         "Save a transcription result to the database."
+    
+    def save_with_logging(
+            self,
+            *,
+            job_id: str,        # Unique job identifier
+            audio_path: str,    # Path to the source audio file
+            audio_hash: str,    # Hash of source audio in "algo:hexdigest" format
+            text: str,          # Transcribed text output
+            text_hash: str,     # Hash of transcribed text in "algo:hexdigest" format
+            segments: Optional[List[Dict[str, Any]]] = None,  # Timestamped segments
+            metadata: Optional[Dict[str, Any]] = None,        # Plugin metadata
+            logger: Optional[logging.Logger] = None           # Optional logger for success/failure messages
+        ) -> bool:  # True if saved; False if the save failed (error logged, not raised)
+        "Save a result, logging success/failure. Failures are logged and swallowed (returns False).
+
+Centralizes the try/save/log/except block every transcription plugin reimplements.
+Returns True on success so callers can gate post-save side effects on the result."
     
     def get_by_job_id(
             self,
