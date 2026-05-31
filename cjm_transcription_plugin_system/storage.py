@@ -24,6 +24,7 @@ class TranscriptionRow:
     job_id: str          # Unique job identifier
     audio_path: str      # Path to the source audio file
     audio_hash: str      # Hash of source audio in "algo:hexdigest" format
+    config_hash: str     # Hash of the effective transcription config used
     text: str            # Transcribed text output
     text_hash: str       # Hash of transcribed text in "algo:hexdigest" format
     segments: Optional[List[Dict[str, Any]]] = None  # Timestamped segments
@@ -40,6 +41,7 @@ class TranscriptionStorage:
             job_id TEXT UNIQUE NOT NULL,
             audio_path TEXT NOT NULL,
             audio_hash TEXT NOT NULL,
+            config_hash TEXT NOT NULL DEFAULT '',
             text TEXT NOT NULL,
             text_hash TEXT NOT NULL,
             segments JSON,
@@ -50,36 +52,62 @@ class TranscriptionStorage:
 
     INDEX = "CREATE INDEX IF NOT EXISTS idx_transcriptions_job_id ON transcriptions(job_id);"
 
+    # Cache/upsert key: one row per (audio_path, config_hash). INSERT OR REPLACE
+    # overwrites on re-run; get_cached additionally filters on audio_hash for
+    # content-correctness (a changed audio file misses, the next save replaces).
+    CACHE_INDEX = (
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_transcriptions_cache "
+        "ON transcriptions(audio_path, config_hash);"
+    )
+
     def __init__(
         self,
         db_path: str  # Absolute path to the SQLite database file
     ):
-        """Initialize storage and create table if needed."""
+        """Initialize storage, create table, run migrations, and build indexes."""
         self.db_path = db_path
         with sqlite3.connect(self.db_path) as con:
             con.execute(self.SCHEMA)
+            self._migrate(con)
             con.execute(self.INDEX)
+            con.execute(self.CACHE_INDEX)
+
+    def _migrate(
+        self,
+        con: sqlite3.Connection  # Open connection (within the __init__ transaction)
+    ) -> None:
+        """Add columns introduced after the original schema (idempotent).
+
+        Pre-cache tables lack `config_hash`; add it with an empty-string default.
+        Existing rows become unreachable via get_cached (config_hash='' won't match
+        a real config hash) — intentional, transcriptions are regenerable."""
+        cols = {r[1] for r in con.execute("PRAGMA table_info(transcriptions)").fetchall()}
+        if "config_hash" not in cols:
+            con.execute("ALTER TABLE transcriptions ADD COLUMN config_hash TEXT NOT NULL DEFAULT ''")
 
     def save(
         self,
         job_id: str,        # Unique job identifier
         audio_path: str,    # Path to the source audio file
         audio_hash: str,    # Hash of source audio in "algo:hexdigest" format
+        config_hash: str,   # Hash of the effective transcription config
         text: str,          # Transcribed text output
         text_hash: str,     # Hash of transcribed text in "algo:hexdigest" format
         segments: Optional[List[Dict[str, Any]]] = None,  # Timestamped segments
         metadata: Optional[Dict[str, Any]] = None         # Plugin metadata
     ) -> None:
-        """Save a transcription result to the database."""
+        """Save or replace a transcription result (upsert by audio_path + config_hash)."""
         with sqlite3.connect(self.db_path) as con:
             con.execute(
-                """INSERT INTO transcriptions
-                   (job_id, audio_path, audio_hash, text, text_hash, segments, metadata, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT OR REPLACE INTO transcriptions
+                   (job_id, audio_path, audio_hash, config_hash, text, text_hash,
+                    segments, metadata, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     job_id,
                     audio_path,
                     audio_hash,
+                    config_hash,
                     text,
                     text_hash,
                     json.dumps(segments) if segments else None,
@@ -94,6 +122,7 @@ class TranscriptionStorage:
         job_id: str,        # Unique job identifier
         audio_path: str,    # Path to the source audio file
         audio_hash: str,    # Hash of source audio in "algo:hexdigest" format
+        config_hash: str,   # Hash of the effective transcription config
         text: str,          # Transcribed text output
         text_hash: str,     # Hash of transcribed text in "algo:hexdigest" format
         segments: Optional[List[Dict[str, Any]]] = None,  # Timestamped segments
@@ -109,6 +138,7 @@ class TranscriptionStorage:
                 job_id=job_id,
                 audio_path=audio_path,
                 audio_hash=audio_hash,
+                config_hash=config_hash,
                 text=text,
                 text_hash=text_hash,
                 segments=segments,
@@ -122,6 +152,28 @@ class TranscriptionStorage:
                 logger.error(f"Failed to save to DB: {e}")
             return False
 
+    def get_cached(
+        self,
+        audio_path: str,   # Path to the source audio file
+        audio_hash: str,   # Content hash of the audio (cache miss if the file changed)
+        config_hash: str   # Hash of the effective transcription config
+    ) -> Optional[TranscriptionRow]:  # Cached row or None
+        """Retrieve a content-correct cached transcription result.
+
+        Matches on audio_path + audio_hash + config_hash. A changed audio file
+        (new audio_hash) misses even if a stale row exists at the same
+        (audio_path, config_hash) — the next save() replaces it."""
+        with sqlite3.connect(self.db_path) as con:
+            cur = con.execute(
+                """SELECT job_id, audio_path, audio_hash, config_hash, text, text_hash,
+                          segments, metadata, created_at
+                   FROM transcriptions
+                   WHERE audio_path = ? AND audio_hash = ? AND config_hash = ?""",
+                (audio_path, audio_hash, config_hash)
+            )
+            row = cur.fetchone()
+            return self._row(row) if row else None
+
     def get_by_job_id(
         self,
         job_id: str  # Job identifier to look up
@@ -129,50 +181,44 @@ class TranscriptionStorage:
         """Retrieve a transcription result by job ID."""
         with sqlite3.connect(self.db_path) as con:
             cur = con.execute(
-                """SELECT job_id, audio_path, audio_hash, text, text_hash,
+                """SELECT job_id, audio_path, audio_hash, config_hash, text, text_hash,
                           segments, metadata, created_at
                    FROM transcriptions WHERE job_id = ?""",
                 (job_id,)
             )
             row = cur.fetchone()
-            if not row:
-                return None
-            return TranscriptionRow(
-                job_id=row[0],
-                audio_path=row[1],
-                audio_hash=row[2],
-                text=row[3],
-                text_hash=row[4],
-                segments=json.loads(row[5]) if row[5] else None,
-                metadata=json.loads(row[6]) if row[6] else None,
-                created_at=row[7]
-            )
+            return self._row(row) if row else None
 
     def list_jobs(
         self,
         limit: int = 100  # Maximum number of rows to return
     ) -> List[TranscriptionRow]:  # List of transcription rows
         """List transcription jobs ordered by creation time (newest first)."""
-        results = []
         with sqlite3.connect(self.db_path) as con:
             cur = con.execute(
-                """SELECT job_id, audio_path, audio_hash, text, text_hash,
+                """SELECT job_id, audio_path, audio_hash, config_hash, text, text_hash,
                           segments, metadata, created_at
                    FROM transcriptions ORDER BY created_at DESC LIMIT ?""",
                 (limit,)
             )
-            for row in cur:
-                results.append(TranscriptionRow(
-                    job_id=row[0],
-                    audio_path=row[1],
-                    audio_hash=row[2],
-                    text=row[3],
-                    text_hash=row[4],
-                    segments=json.loads(row[5]) if row[5] else None,
-                    metadata=json.loads(row[6]) if row[6] else None,
-                    created_at=row[7]
-                ))
-        return results
+            return [self._row(row) for row in cur]
+
+    @staticmethod
+    def _row(
+        row: tuple  # Raw SQLite row tuple in canonical column order
+    ) -> TranscriptionRow:  # Parsed row dataclass
+        """Build a TranscriptionRow from a raw column tuple."""
+        return TranscriptionRow(
+            job_id=row[0],
+            audio_path=row[1],
+            audio_hash=row[2],
+            config_hash=row[3],
+            text=row[4],
+            text_hash=row[5],
+            segments=json.loads(row[6]) if row[6] else None,
+            metadata=json.loads(row[7]) if row[7] else None,
+            created_at=row[8]
+        )
 
     def verify_audio(
         self,

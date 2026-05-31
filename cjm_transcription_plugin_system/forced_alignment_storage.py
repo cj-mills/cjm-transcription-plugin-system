@@ -26,6 +26,7 @@ class ForcedAlignmentRow:
     audio_hash: str      # Hash of source audio in "algo:hexdigest" format
     text: str            # Input transcript text that was aligned
     text_hash: str       # Hash of input text in "algo:hexdigest" format
+    config_hash: str     # Hash of the effective alignment config used
     items: Optional[List[Dict[str, Any]]] = None  # Serialized ForcedAlignItems
     metadata: Optional[Dict[str, Any]] = None      # Plugin metadata
     created_at: Optional[float] = None             # Unix timestamp
@@ -42,6 +43,7 @@ class ForcedAlignmentStorage:
             audio_hash TEXT NOT NULL,
             text TEXT NOT NULL,
             text_hash TEXT NOT NULL,
+            config_hash TEXT NOT NULL DEFAULT '',
             items JSON,
             metadata JSON,
             created_at REAL NOT NULL
@@ -50,15 +52,39 @@ class ForcedAlignmentStorage:
 
     INDEX = "CREATE INDEX IF NOT EXISTS idx_forced_alignments_job_id ON forced_alignments(job_id);"
 
+    # Cache/upsert key: one row per (audio_path, text_hash, config_hash). The input
+    # is the (audio, transcript) pair — text_hash is in the key (different transcript
+    # = distinct result). INSERT OR REPLACE overwrites on re-run; get_cached
+    # additionally filters on audio_hash for content-correctness.
+    CACHE_INDEX = (
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_forced_alignments_cache "
+        "ON forced_alignments(audio_path, text_hash, config_hash);"
+    )
+
     def __init__(
         self,
         db_path: str  # Absolute path to the SQLite database file
     ):
-        """Initialize storage and create table if needed."""
+        """Initialize storage, create table, run migrations, and build indexes."""
         self.db_path = db_path
         with sqlite3.connect(self.db_path) as con:
             con.execute(self.SCHEMA)
+            self._migrate(con)
             con.execute(self.INDEX)
+            con.execute(self.CACHE_INDEX)
+
+    def _migrate(
+        self,
+        con: sqlite3.Connection  # Open connection (within the __init__ transaction)
+    ) -> None:
+        """Add columns introduced after the original schema (idempotent).
+
+        Pre-cache tables lack `config_hash`; add it with an empty-string default.
+        Existing rows become unreachable via get_cached (config_hash='' won't match
+        a real config hash) — intentional, alignments are regenerable."""
+        cols = {r[1] for r in con.execute("PRAGMA table_info(forced_alignments)").fetchall()}
+        if "config_hash" not in cols:
+            con.execute("ALTER TABLE forced_alignments ADD COLUMN config_hash TEXT NOT NULL DEFAULT ''")
 
     def save(
         self,
@@ -67,21 +93,24 @@ class ForcedAlignmentStorage:
         audio_hash: str,    # Hash of source audio in "algo:hexdigest" format
         text: str,          # Input transcript text
         text_hash: str,     # Hash of input text in "algo:hexdigest" format
+        config_hash: str,   # Hash of the effective alignment config
         items: Optional[List[Dict[str, Any]]] = None,  # Serialized ForcedAlignItems
         metadata: Optional[Dict[str, Any]] = None       # Plugin metadata
     ) -> None:
-        """Save a forced alignment result to the database."""
+        """Save or replace a forced alignment result (upsert by audio_path + text_hash + config_hash)."""
         with sqlite3.connect(self.db_path) as con:
             con.execute(
-                """INSERT INTO forced_alignments
-                   (job_id, audio_path, audio_hash, text, text_hash, items, metadata, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT OR REPLACE INTO forced_alignments
+                   (job_id, audio_path, audio_hash, text, text_hash, config_hash,
+                    items, metadata, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     job_id,
                     audio_path,
                     audio_hash,
                     text,
                     text_hash,
+                    config_hash,
                     json.dumps(items) if items else None,
                     json.dumps(metadata) if metadata else None,
                     time.time()
@@ -96,6 +125,7 @@ class ForcedAlignmentStorage:
         audio_hash: str,    # Hash of source audio in "algo:hexdigest" format
         text: str,          # Input transcript text
         text_hash: str,     # Hash of input text in "algo:hexdigest" format
+        config_hash: str,   # Hash of the effective alignment config
         items: Optional[List[Dict[str, Any]]] = None,  # Serialized ForcedAlignItems
         metadata: Optional[Dict[str, Any]] = None,      # Plugin metadata
         logger: Optional[logging.Logger] = None         # Optional logger for success/failure messages
@@ -111,6 +141,7 @@ class ForcedAlignmentStorage:
                 audio_hash=audio_hash,
                 text=text,
                 text_hash=text_hash,
+                config_hash=config_hash,
                 items=items,
                 metadata=metadata,
             )
@@ -122,6 +153,29 @@ class ForcedAlignmentStorage:
                 logger.error(f"Failed to save to DB: {e}")
             return False
 
+    def get_cached(
+        self,
+        audio_path: str,   # Path to the source audio file
+        audio_hash: str,   # Content hash of the audio (cache miss if the file changed)
+        text_hash: str,    # Hash of the input transcript text (part of the cache key)
+        config_hash: str   # Hash of the effective alignment config
+    ) -> Optional[ForcedAlignmentRow]:  # Cached row or None
+        """Retrieve a content-correct cached alignment for an (audio, transcript) pair.
+
+        Matches on audio_path + audio_hash + text_hash + config_hash. A changed audio
+        file (new audio_hash) misses even if a stale row exists at the same
+        (audio_path, text_hash, config_hash) — the next save() replaces it."""
+        with sqlite3.connect(self.db_path) as con:
+            cur = con.execute(
+                """SELECT job_id, audio_path, audio_hash, text, text_hash, config_hash,
+                          items, metadata, created_at
+                   FROM forced_alignments
+                   WHERE audio_path = ? AND audio_hash = ? AND text_hash = ? AND config_hash = ?""",
+                (audio_path, audio_hash, text_hash, config_hash)
+            )
+            row = cur.fetchone()
+            return self._row(row) if row else None
+
     def get_by_job_id(
         self,
         job_id: str  # Job identifier to look up
@@ -129,50 +183,44 @@ class ForcedAlignmentStorage:
         """Retrieve a forced alignment result by job ID."""
         with sqlite3.connect(self.db_path) as con:
             cur = con.execute(
-                """SELECT job_id, audio_path, audio_hash, text, text_hash,
+                """SELECT job_id, audio_path, audio_hash, text, text_hash, config_hash,
                           items, metadata, created_at
                    FROM forced_alignments WHERE job_id = ?""",
                 (job_id,)
             )
             row = cur.fetchone()
-            if not row:
-                return None
-            return ForcedAlignmentRow(
-                job_id=row[0],
-                audio_path=row[1],
-                audio_hash=row[2],
-                text=row[3],
-                text_hash=row[4],
-                items=json.loads(row[5]) if row[5] else None,
-                metadata=json.loads(row[6]) if row[6] else None,
-                created_at=row[7]
-            )
+            return self._row(row) if row else None
 
     def list_jobs(
         self,
         limit: int = 100  # Maximum number of rows to return
     ) -> List[ForcedAlignmentRow]:  # List of forced alignment rows
         """List forced alignment jobs ordered by creation time (newest first)."""
-        results = []
         with sqlite3.connect(self.db_path) as con:
             cur = con.execute(
-                """SELECT job_id, audio_path, audio_hash, text, text_hash,
+                """SELECT job_id, audio_path, audio_hash, text, text_hash, config_hash,
                           items, metadata, created_at
                    FROM forced_alignments ORDER BY created_at DESC LIMIT ?""",
                 (limit,)
             )
-            for row in cur:
-                results.append(ForcedAlignmentRow(
-                    job_id=row[0],
-                    audio_path=row[1],
-                    audio_hash=row[2],
-                    text=row[3],
-                    text_hash=row[4],
-                    items=json.loads(row[5]) if row[5] else None,
-                    metadata=json.loads(row[6]) if row[6] else None,
-                    created_at=row[7]
-                ))
-        return results
+            return [self._row(row) for row in cur]
+
+    @staticmethod
+    def _row(
+        row: tuple  # Raw SQLite row tuple in canonical column order
+    ) -> ForcedAlignmentRow:  # Parsed row dataclass
+        """Build a ForcedAlignmentRow from a raw column tuple."""
+        return ForcedAlignmentRow(
+            job_id=row[0],
+            audio_path=row[1],
+            audio_hash=row[2],
+            text=row[3],
+            text_hash=row[4],
+            config_hash=row[5],
+            items=json.loads(row[6]) if row[6] else None,
+            metadata=json.loads(row[7]) if row[7] else None,
+            created_at=row[8]
+        )
 
     def verify_audio(
         self,

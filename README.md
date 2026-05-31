@@ -25,12 +25,12 @@ Total: 6 notebooks
 
 ``` mermaid
 graph LR
-    core[core<br/>Core Data Structures]
-    forced_alignment_core[forced_alignment_core<br/>Forced Alignment Core]
-    forced_alignment_interface[forced_alignment_interface<br/>Forced Alignment Plugin Interface]
-    forced_alignment_storage[forced_alignment_storage<br/>Forced Alignment Storage]
-    plugin_interface[plugin_interface<br/>Transcription Plugin Interface]
-    storage[storage<br/>Transcription Storage]
+    core["core<br/>Core Data Structures"]
+    forced_alignment_core["forced_alignment_core<br/>Forced Alignment Core"]
+    forced_alignment_interface["forced_alignment_interface<br/>Forced Alignment Plugin Interface"]
+    forced_alignment_storage["forced_alignment_storage<br/>Forced Alignment Storage"]
+    plugin_interface["plugin_interface<br/>Transcription Plugin Interface"]
+    storage["storage<br/>Transcription Storage"]
 
     forced_alignment_interface --> forced_alignment_core
     plugin_interface --> core
@@ -185,6 +185,7 @@ class ForcedAlignmentRow:
     audio_hash: str  # Hash of source audio in "algo:hexdigest" format
     text: str  # Input transcript text that was aligned
     text_hash: str  # Hash of input text in "algo:hexdigest" format
+    config_hash: str  # Hash of the effective alignment config used
     items: Optional[List[Dict[str, Any]]]  # Serialized ForcedAlignItems
     metadata: Optional[Dict[str, Any]]  # Plugin metadata
     created_at: Optional[float]  # Unix timestamp
@@ -202,7 +203,7 @@ class ForcedAlignmentStorage:
             self,
             db_path: str  # Absolute path to the SQLite database file
         )
-        "Initialize storage and create table if needed."
+        "Initialize storage, create table, run migrations, and build indexes."
     
     def save(
             self,
@@ -211,10 +212,11 @@ class ForcedAlignmentStorage:
             audio_hash: str,    # Hash of source audio in "algo:hexdigest" format
             text: str,          # Input transcript text
             text_hash: str,     # Hash of input text in "algo:hexdigest" format
+            config_hash: str,   # Hash of the effective alignment config
             items: Optional[List[Dict[str, Any]]] = None,  # Serialized ForcedAlignItems
             metadata: Optional[Dict[str, Any]] = None       # Plugin metadata
         ) -> None
-        "Save a forced alignment result to the database."
+        "Save or replace a forced alignment result (upsert by audio_path + text_hash + config_hash)."
     
     def save_with_logging(
             self,
@@ -224,6 +226,7 @@ class ForcedAlignmentStorage:
             audio_hash: str,    # Hash of source audio in "algo:hexdigest" format
             text: str,          # Input transcript text
             text_hash: str,     # Hash of input text in "algo:hexdigest" format
+            config_hash: str,   # Hash of the effective alignment config
             items: Optional[List[Dict[str, Any]]] = None,  # Serialized ForcedAlignItems
             metadata: Optional[Dict[str, Any]] = None,      # Plugin metadata
             logger: Optional[logging.Logger] = None         # Optional logger for success/failure messages
@@ -232,6 +235,19 @@ class ForcedAlignmentStorage:
 
 Centralizes the try/save/log/except block every forced-alignment plugin reimplements.
 Returns True on success so callers can gate post-save side effects on the result."
+    
+    def get_cached(
+            self,
+            audio_path: str,   # Path to the source audio file
+            audio_hash: str,   # Content hash of the audio (cache miss if the file changed)
+            text_hash: str,    # Hash of the input transcript text (part of the cache key)
+            config_hash: str   # Hash of the effective alignment config
+        ) -> Optional[ForcedAlignmentRow]:  # Cached row or None
+        "Retrieve a content-correct cached alignment for an (audio, transcript) pair.
+
+Matches on audio_path + audio_hash + text_hash + config_hash. A changed audio
+file (new audio_hash) misses even if a stale row exists at the same
+(audio_path, text_hash, config_hash) — the next save() replaces it."
     
     def get_by_job_id(
             self,
@@ -335,6 +351,7 @@ class TranscriptionRow:
     job_id: str  # Unique job identifier
     audio_path: str  # Path to the source audio file
     audio_hash: str  # Hash of source audio in "algo:hexdigest" format
+    config_hash: str  # Hash of the effective transcription config used
     text: str  # Transcribed text output
     text_hash: str  # Hash of transcribed text in "algo:hexdigest" format
     segments: Optional[List[Dict[str, Any]]]  # Timestamped segments
@@ -354,19 +371,20 @@ class TranscriptionStorage:
             self,
             db_path: str  # Absolute path to the SQLite database file
         )
-        "Initialize storage and create table if needed."
+        "Initialize storage, create table, run migrations, and build indexes."
     
     def save(
             self,
             job_id: str,        # Unique job identifier
             audio_path: str,    # Path to the source audio file
             audio_hash: str,    # Hash of source audio in "algo:hexdigest" format
+            config_hash: str,   # Hash of the effective transcription config
             text: str,          # Transcribed text output
             text_hash: str,     # Hash of transcribed text in "algo:hexdigest" format
             segments: Optional[List[Dict[str, Any]]] = None,  # Timestamped segments
             metadata: Optional[Dict[str, Any]] = None         # Plugin metadata
         ) -> None
-        "Save a transcription result to the database."
+        "Save or replace a transcription result (upsert by audio_path + config_hash)."
     
     def save_with_logging(
             self,
@@ -374,6 +392,7 @@ class TranscriptionStorage:
             job_id: str,        # Unique job identifier
             audio_path: str,    # Path to the source audio file
             audio_hash: str,    # Hash of source audio in "algo:hexdigest" format
+            config_hash: str,   # Hash of the effective transcription config
             text: str,          # Transcribed text output
             text_hash: str,     # Hash of transcribed text in "algo:hexdigest" format
             segments: Optional[List[Dict[str, Any]]] = None,  # Timestamped segments
@@ -384,6 +403,18 @@ class TranscriptionStorage:
 
 Centralizes the try/save/log/except block every transcription plugin reimplements.
 Returns True on success so callers can gate post-save side effects on the result."
+    
+    def get_cached(
+            self,
+            audio_path: str,   # Path to the source audio file
+            audio_hash: str,   # Content hash of the audio (cache miss if the file changed)
+            config_hash: str   # Hash of the effective transcription config
+        ) -> Optional[TranscriptionRow]:  # Cached row or None
+        "Retrieve a content-correct cached transcription result.
+
+Matches on audio_path + audio_hash + config_hash. A changed audio file
+(new audio_hash) misses even if a stale row exists at the same
+(audio_path, config_hash) — the next save() replaces it."
     
     def get_by_job_id(
             self,
