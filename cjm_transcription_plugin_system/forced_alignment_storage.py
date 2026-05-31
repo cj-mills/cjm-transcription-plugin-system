@@ -71,7 +71,7 @@ class ForcedAlignmentStorage:
             con.execute(self.SCHEMA)
             self._migrate(con)
             con.execute(self.INDEX)
-            con.execute(self.CACHE_INDEX)
+            self._ensure_cache_index(con)
 
     def _migrate(
         self,
@@ -85,6 +85,25 @@ class ForcedAlignmentStorage:
         cols = {r[1] for r in con.execute("PRAGMA table_info(forced_alignments)").fetchall()}
         if "config_hash" not in cols:
             con.execute("ALTER TABLE forced_alignments ADD COLUMN config_hash TEXT NOT NULL DEFAULT ''")
+
+    def _ensure_cache_index(
+        self,
+        con: sqlite3.Connection  # Open connection (within the __init__ transaction)
+    ) -> None:
+        """Create the UNIQUE cache index, de-duplicating first if needed.
+
+        Append-only (pre-cache) tables stored many rows per input; the migration
+        defaults their config_hash to '', so old rows collide on the cache key and
+        the UNIQUE index can't build. On that collision, drop the older duplicates
+        (keep newest per cache key) and retry — results are regenerable, so safe."""
+        try:
+            con.execute(self.CACHE_INDEX)
+        except sqlite3.IntegrityError:
+            con.execute(
+                "DELETE FROM forced_alignments WHERE id NOT IN "
+                "(SELECT MAX(id) FROM forced_alignments GROUP BY audio_path, text_hash, config_hash)"
+            )
+            con.execute(self.CACHE_INDEX)
 
     def save(
         self,
