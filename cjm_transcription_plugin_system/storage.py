@@ -10,10 +10,10 @@ Docs: https://cj-mills.github.io/cjm-transcription-plugin-systemstorage.html.md"
 # %% auto #0
 __all__ = ['TranscriptionRow', 'TranscriptionStorage']
 
-# %% ../nbs/storage.ipynb #934b521d
+# %% ../nbs/storage.ipynb #6aa41150
 # REMOVE-AFTER-OVERHAUL(option-c-cascade): re-export shim; the classes
 # live in cjm_transcription_adapter_interface.storage (born-final home).
 from cjm_transcription_adapter_interface.storage import TranscriptionRow, TranscriptionStorage
 
-# %% ../nbs/storage.ipynb #e55bfee1
+# %% ../nbs/storage.ipynb #7157a363
 _all_ = ['TranscriptionRow', 'TranscriptionStorage']

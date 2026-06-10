@@ -10,10 +10,10 @@ Docs: https://cj-mills.github.io/cjm-transcription-plugin-systemcore.html.md"""
 # %% auto #0
 __all__ = ['TranscriptionResult']
 
-# %% ../nbs/core.ipynb #9f29e6f3
+# %% ../nbs/core.ipynb #90ce73a0
 # REMOVE-AFTER-OVERHAUL(option-c-cascade): re-export shim; the classes
 # live in cjm_transcription_adapter_interface.core (born-final home).
 from cjm_transcription_adapter_interface.core import TranscriptionResult
 
-# %% ../nbs/core.ipynb #aef1f61a
+# %% ../nbs/core.ipynb #0894ff18
 _all_ = ['TranscriptionResult']

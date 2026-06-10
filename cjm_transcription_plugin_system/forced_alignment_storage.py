@@ -10,10 +10,10 @@ Docs: https://cj-mills.github.io/cjm-transcription-plugin-systemforced_alignment
 # %% auto #0
 __all__ = ['ForcedAlignmentRow', 'ForcedAlignmentStorage']
 
-# %% ../nbs/forced_alignment_storage.ipynb #e5131c7e
+# %% ../nbs/forced_alignment_storage.ipynb #2a6cbc64
 # REMOVE-AFTER-OVERHAUL(option-c-cascade): re-export shim; the classes
 # live in cjm_forced_alignment_adapter_interface.storage (born-final home).
 from cjm_forced_alignment_adapter_interface.storage import ForcedAlignmentRow, ForcedAlignmentStorage
 
-# %% ../nbs/forced_alignment_storage.ipynb #2d7084e4
+# %% ../nbs/forced_alignment_storage.ipynb #01cc909e
 _all_ = ['ForcedAlignmentRow', 'ForcedAlignmentStorage']

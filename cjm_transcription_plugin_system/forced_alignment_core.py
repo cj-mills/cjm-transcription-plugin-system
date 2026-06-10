@@ -10,10 +10,10 @@ Docs: https://cj-mills.github.io/cjm-transcription-plugin-systemforced_alignment
 # %% auto #0
 __all__ = ['ForcedAlignItem', 'ForcedAlignResult']
 
-# %% ../nbs/forced_alignment_core.ipynb #979e19cc
+# %% ../nbs/forced_alignment_core.ipynb #71d17341
 # REMOVE-AFTER-OVERHAUL(option-c-cascade): re-export shim; the classes
 # live in cjm_forced_alignment_adapter_interface.core (born-final home).
 from cjm_forced_alignment_adapter_interface.core import ForcedAlignItem, ForcedAlignResult
 
-# %% ../nbs/forced_alignment_core.ipynb #2d8fe6b5
+# %% ../nbs/forced_alignment_core.ipynb #8284c151
 _all_ = ['ForcedAlignItem', 'ForcedAlignResult']
