@@ -1,4 +1,7 @@
-"""Data structures for word-level forced alignment results
+"""REMOVE-AFTER-OVERHAUL(option-c-cascade): class-identical legacy
+import surface; this module's content relocated to
+`cjm_forced_alignment_adapter_interface` at execution stage 2 (pass-2 Thread 3
+interface-library dissolution).
 
 Docs: https://cj-mills.github.io/cjm-transcription-plugin-systemforced_alignment_core.html.md"""
 
@@ -7,21 +10,10 @@ Docs: https://cj-mills.github.io/cjm-transcription-plugin-systemforced_alignment
 # %% auto #0
 __all__ = ['ForcedAlignItem', 'ForcedAlignResult']
 
-# %% ../nbs/forced_alignment_core.ipynb #cell-imports
-from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, List, Optional
+# %% ../nbs/forced_alignment_core.ipynb #979e19cc
+# REMOVE-AFTER-OVERHAUL(option-c-cascade): re-export shim; the classes
+# live in cjm_forced_alignment_adapter_interface.core (born-final home).
+from cjm_forced_alignment_adapter_interface.core import ForcedAlignItem, ForcedAlignResult
 
-# %% ../nbs/forced_alignment_core.ipynb #cell-item
-@dataclass
-class ForcedAlignItem:
-    """A single word-level alignment result."""
-    text: str        # The aligned word (punctuation typically stripped by model)
-    start_time: float  # Start time in seconds
-    end_time: float    # End time in seconds
-
-# %% ../nbs/forced_alignment_core.ipynb #cell-result
-@dataclass
-class ForcedAlignResult:
-    """Standardized output for all forced alignment plugins."""
-    items: List[ForcedAlignItem]                          # Word-level alignments
-    metadata: Dict[str, Any] = field(default_factory=dict)  # Plugin-specific metadata
+# %% ../nbs/forced_alignment_core.ipynb #2d8fe6b5
+_all_ = ['ForcedAlignItem', 'ForcedAlignResult']

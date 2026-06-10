@@ -1,4 +1,7 @@
-"""Standardized result DTO for audio transcription plugins
+"""REMOVE-AFTER-OVERHAUL(option-c-cascade): class-identical legacy
+import surface; this module's content relocated to
+`cjm_transcription_adapter_interface` at execution stage 2 (pass-2 Thread 3
+interface-library dissolution).
 
 Docs: https://cj-mills.github.io/cjm-transcription-plugin-systemcore.html.md"""
 
@@ -7,15 +10,10 @@ Docs: https://cj-mills.github.io/cjm-transcription-plugin-systemcore.html.md"""
 # %% auto #0
 __all__ = ['TranscriptionResult']
 
-# %% ../nbs/core.ipynb #5b7c288a
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+# %% ../nbs/core.ipynb #9f29e6f3
+# REMOVE-AFTER-OVERHAUL(option-c-cascade): re-export shim; the classes
+# live in cjm_transcription_adapter_interface.core (born-final home).
+from cjm_transcription_adapter_interface.core import TranscriptionResult
 
-# %% ../nbs/core.ipynb #dc1c53ac
-@dataclass
-class TranscriptionResult:
-    """Standardized output for all transcription plugins."""
-    text: str                                        # The transcribed text
-    confidence: Optional[float] = None               # Overall confidence (0.0 to 1.0)
-    segments: Optional[List[Dict[str, Any]]] = None  # Timestamped segments
-    metadata: Dict[str, Any] = field(default_factory=dict)  # Additional metadata
+# %% ../nbs/core.ipynb #aef1f61a
+_all_ = ['TranscriptionResult']
